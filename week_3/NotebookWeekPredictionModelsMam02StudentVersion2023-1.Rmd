@@ -92,14 +92,12 @@ bc
   #=> Remove the "id" column from bc. Note that if you consider to use the "select" command in dplyr then this command may clash with the select command in the MASS library. Therefore use dplyr::select in that case.
 
 # => convert the first 9 factors to numeric. You can use a for loop on these variables, or use "mutate_at". 
-View(bc)
-# Summary(bc)
-# they are already numeric ??
-#bc <- bc %>%
-#  mutate_at(vars(Cl.thickness, Cell.size, Cell.shape, Marg.adhesion, Epith.c.size, Bare.nuclei, Bl.cromatin, Bl.cromatin,Normal.nucleoli, Mitoses), ~ as.numeric(as.character(.)))
-# bc <- as.numeric(as.character(bc))
+
+bc <- bc %>%
+  mutate_at(vars(Cl.thickness, Cell.size, Cell.shape, Marg.adhesion, Epith.c.size, Bare.nuclei, Bl.cromatin, Bl.cromatin,Normal.nucleoli, Mitoses), ~ as.numeric(as.character(.)))
+
+# double check
 sapply(bc, class)
-#....... TODO
 
 # Look at the class variable
 bc$Class
