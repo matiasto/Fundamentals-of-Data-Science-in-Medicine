@@ -1,22 +1,36 @@
 ---
 title: "MAM02 Prediction Models Notebook"
 output: html_notebook
+editor_options: 
+  markdown: 
+    wrap: sentence
 ---
 
-In this assignment we will develop and evaluate prediction models for breast cancer. The dataset is provided in the package "mlbench" so you do not need to download it from an explicit address.
+In this assignment we will develop and evaluate prediction models for breast cancer.
+The dataset is provided in the package "mlbench" so you do not need to download it from an explicit address.
 
-What should you submit? You need to submit:
-1. This Notebook (in .Rmd format) after filling in all your answers inside this notebook. You are required to do an action (write or fill-in code or write documentation) at the places marked by an arrow (=>). This arrow appears either in the comments (and it will be preceeded by "#") or outside the text (without "#"). One of the actions is to document a chunk of code. Inside the code you need to document the commands marked with "#@".
-2. The Notebook in html format with all the results.
+What should you submit?
+You need to submit: 1.
+This Notebook (in .Rmd format) after filling in all your answers inside this notebook.
+You are required to do an action (write or fill-in code or write documentation) at the places marked by an arrow (=\>).
+This arrow appears either in the comments (and it will be preceeded by "\#") or outside the text (without "\#").
+One of the actions is to document a chunk of code.
+Inside the code you need to document the commands marked with "\#\@".
+2.
+The Notebook in html format with all the results.
 
-Grading: The practical has two parts. The first is a "closed" part, in which you are expected to add some code or to document a chunk of code. The other part is open, in which you choose a non-parametric approach to learn models, and you compare a strategy based on this new approach to a strategy that you learn during the closed part. The closed part amounts to 60% of the grade and the open part amounts to 40% of the grade. Of course we are more than happy to help you (also) on the open part but it is emphatically intended to be your own work.
+Grading: The practical has two parts.
+The first is a "closed" part, in which you are expected to add some code or to document a chunk of code.
+The other part is open, in which you choose a non-parametric approach to learn models, and you compare a strategy based on this new approach to a strategy that you learn during the closed part.
+The closed part amounts to 60% of the grade and the open part amounts to 40% of the grade.
+Of course we are more than happy to help you (also) on the open part but it is emphatically intended to be your own work.
 
 Good luck!
 
-==> Student Name(s): Matias Tolppanen, Robin Manz
-==> Student number(s): 15779300, 
+==\> Student Name(s): Matias Tolppanen, Robin Manz ==\> Student number(s): 15779300,
 
 Load libraries
+
 ```{r, echo=FALSE}
 library(tidyverse) # Includes many libraries like dplyr (for easy data maniputaion, readr (for reading datasets), ggplot2 (for creating elegant data visualisations), tibble (for easily working with data frames), etc.)
 library(rms)       # for implementing Regression Modeling Strategies
@@ -27,12 +41,15 @@ library(MASS)      # for stepwise variable selection
 ```
 
 Set options
+
 ```{r, echo=FALSE}
 options(dplyr.print_min = 5L, dplyr.print_max = 5L) # set number of rows to show in a data frame
 ```
 
 # Closed part (60% of grade)
+
 # read file
+
 ```{r, message=FALSE}
 data(BreastCancer, package="mlbench")
 names(BreastCancer) # * What are the names of the data frame bc?
@@ -49,11 +66,11 @@ BreastCancer
 sapply(BreastCancer, function(x) sum(is.na(x)))
 # double check the column "Bare.nuclei"
 sum(is.na(BreastCancer$Bare.nuclei))
-# 
-#
+
 ```
 
 Preprocess
+
 ```{r}
 # => We will use only complete cases without any missing values in this excercise. Obtain the data frame "bc" with complete cases. Hint: look at the function complete.cases(). You can use it for example with the filter command of dplyr (or just use base R)
 bc <- BreastCancer[complete.cases(BreastCancer),]  # dataset with complete cases
@@ -76,19 +93,27 @@ bc
 
 # => convert the first 9 factors to numeric. You can use a for loop on these variables, or use "mutate_at". 
 View(bc)
-Summary(bc)
+# Summary(bc)
 # they are already numeric ??
-.......
+#bc <- bc %>%
+#  mutate_at(vars(Cl.thickness, Cell.size, Cell.shape, Marg.adhesion, Epith.c.size, Bare.nuclei, Bl.cromatin, Bl.cromatin,Normal.nucleoli, Mitoses), ~ as.numeric(as.character(.)))
+# bc <- as.numeric(as.character(bc))
+sapply(bc, class)
+#....... TODO
 
 # Look at the class variable
 bc$Class
 
 # => change "malignant" into the number 1, and "bening" into the number 0. You can use a simple ifelse, or use the "recode" command in dplyr.
 bc$Class = recode(bc$Class, malignant = 1, benign = 0)
+
 ```
 
+We will work with logistic regression models in this assignment to predict the probability of the malignant class (class = 1), but we could have used other kinds of models.
+We will fit two logistic regression models: one with only Mitoses as covariate, and another model with Mitoses and Cl.thickness.
+We will use the "lrm" command in the "rms" package but we could have also used the base R command "glm" instead.
+We will see later how to use glm.
 
-We will work with logistic regression models in this assignment to predict the probability of the malignant class (class = 1), but we could have used other kinds of models. We will fit two logistic regression models: one with only Mitoses as covariate, and another model with Mitoses and Cl.thickness. We will use the "lrm" command in the "rms" package but we could have also used the base R command "glm" instead. We will see later how to use glm.
 ```{r}
 ddist <- datadist(bc) # preparation: in package rms we need to define the data distribution of the variables first. So before any models are fitted, this command stores the distribution summaries (e.g. ranges) for all potential variables.  
 options(datadist='ddist') # This means that when we fit a model we will also store the distribution information with the model object as well
@@ -98,71 +123,96 @@ mitoses.lrm # Look at the model's coefficients
 mitoses.thickness.lrm <- lrm(Class ~ Mitoses + Cl.thickness, x=T, y=T, data=bc) # fit a model that includes Mitoses and Cl.thickness as covariates
 ```
 
-
-What are the model's characteristics on a test set? Let's create a training and test sets and train the two models on the training set
+What are the model's characteristics on a test set?
+Let's create a training and test sets and train the two models on the training set
 
 ```{r}
 set.seed(1234) # we fix the seed so that results are the same for all students
-...
+
 smp_size <- floor(0.70 * nrow(bc))
 train_indexes <- sample(seq_len(nrow(bc)), size = smp_size)
 train <- bc[train_indexes, ]  # => Obrain train set consisting of 70% of the data
 test <-  bc[-train_indexes,]  #=> Obtain test set consisting of the rest of observations
 nrow(train)
 nrow(test)
+nrow(bc)
+# train 478, test 205
 mitoses.train.lrm <- lrm(Class ~ Mitoses, x=T, y=T, data=train) # => fit lrm model on the training set using only Mitoses, use x=T and y=T
 mitoses.thickness.train.lrm <- lrm(Class ~ Mitoses + Cl.thickness, x=T, y=T, data=train) # => fit lrm model on the training set using  Mitoses and Cl.thickness, use x=T and y=T
 ```
 
 Now predict on the test set
+
 ```{r}
 predicted.mitoses.test <- predict(mitoses.train.lrm, newdata = test, type = "fitted") # => obtain the predicted probabilities of mitoses.train.lrm on the test set. Hint: use the "predict" function. Important note: make sure you use the right "type" in the command to get probabilities and not log odds.
 
 predicted.mitoses.thickness.test <- predict(mitoses.thickness.train.lrm, newdata = test, type = "fitted") # => obtain the predicted probabilities of mitoses.thickness.train.lrm on the test set.Check that they indeed are between 0 and 1 and have no negative numbers etc.
+min(predicted.mitoses.thickness.test)
+max(predicted.mitoses.thickness.test)
+# min and max are within [0,1]
 ```
+
 Inspect histogram and ranges of probabilities
+
 ```{r}
  # => plot histogram of predicted.mitoses.test
-...
+hist(predicted.mitoses.test, breaks=20)
 
  #* => plot histogram of predicted.mitoses.thickness.test
-... = 
+hist(predicted.mitoses.thickness.test, breaks=20)
   
  #* => Obtain range of predicted.mitoses.test (state minimum and maximum and difference between them)
-...
+m_min <- min(predicted.mitoses.test)
+m_max <- max(predicted.mitoses.test)
+m_range <- m_max - m_min
  #* => Obtain range of predicted.mitoses.thickness.test
-...
+
+m_t_min <- min(predicted.mitoses.thickness.test)
+m_t_max <- max(predicted.mitoses.thickness.test)
+m_t_range <- m_t_max - m_t_min
 ```
 
-Q: => From the point of view of larger range, which model is better?
-
+Q: =\> From the point of view of larger range, which model is better?
+A: =\> predicted.mitoses.thickness.test has a higher range \~ 0.98 which indicates that it has higher max and lower min probabilities compared to the range of \~ 0.76 of predicted.mitosis.test.
+However when looking at the histogramms, the predicted.mitoses.test-set depicts more uncertainty with highly varying predictive values.
 
 Probability densities
+
 ```{r}
 mitoses.test.pred.class <- data.frame(pr=predicted.mitoses.test, cl = as.factor(test$Class))
 ggplot(mitoses.test.pred.class, aes(pr, fill = cl)) + geom_density(adjust = 2, alpha = 0.5) + xlab("predicted probability")
 # => For this density plot, which of the following statements are true:
-# For those without breast cancer the probabilities are concentrated below 0.4
-# For those with breast cancer the probabilities are concentrated above 0.8
-# For those without breast cancer the probabilities are very high
-# For those with breast cancer they are likely to have any probability.
+# For those without breast cancer the probabilities are concentrated below 0.4 => True
+# For those with breast cancer the probabilities are concentrated above 0.8 => False
+# For those without breast cancer the probabilities are very high => ? Subjective, False
+# For those with breast cancer they are likely to have any probability. => True, from the frequency of the probabilities of patients with breastcancer any probability seems to be as likely. 
 
 # => What do you think that the "adjust" above does. Try the value 1 instead of 2. What does alpha do? Try alpha = 1
+# A the density plot is not as smooth anymore. A bigger adjust values adjust the bandwidth in the histogram witch resutls in a smoother graph
 
 # => plot the probability density graph as before but now for the predicted.mitoses.thickness.test
-...
+mitoses.thickness.test.pred.class <- data.frame(pr=predicted.mitoses.thickness.test, cl = as.factor(test$Class))
+ggplot(mitoses.thickness.test.pred.class, aes(pr, fill = cl)) + geom_density(adjust = 2, alpha = 0.5) + xlab("predicted probability")
 
 # => Calculate the discrimination slope for both models, wothout using a package. You may want to consult the slides of the presentation to recall what that is. Which model is better in its discrimination slope?
-... 
+m_t_slope = mean(subset(mitoses.thickness.test.pred.class, cl==1)$pr) -mean(subset(mitoses.thickness.test.pred.class, cl==0)$pr)
+
+m_slope = mean(subset(mitoses.test.pred.class, cl==1)$pr) -mean(subset(mitoses.test.pred.class, cl==0)$pr)
 
 # Calculate the unsharpness of both models. Look at the slides in the presentation. Which model is sharpner (i.e. less unsharpness)? 
-unsharpness.mitoses.test <- ...
-unsharpness.mitoses.thickness.test <- ... = 
+unsharpness.mitoses.test <- mean(subset(mitoses.test.pred.class, cl==1)$pr * (1 - subset(mitoses.test.pred.class, cl==1)$pr))
+print(unsharpness.mitoses.test)
+# mitosis.test has a higher unsharpness which means that this models predictions are not as distinguisuable / are not as deterministic 
+unsharpness.mitoses.thickness.test <- mean(subset(mitoses.thickness.test.pred.class, cl==1)$pr * (1 - subset(mitoses.thickness.test.pred.class, cl==1)$pr))
+print(unsharpness.mitoses.thickness.test)
+# mitosis.thickness.test has a lower unsharpness, which indicates a more distinct spread between high and low probability.
+# This can also be seen in the histograms
 
 ```
 
 Let's look at the ROC curve and the Area Under the ROC Curve (AUC).
 The functions "prediction" and "performance" are from the ROCR package.
+
 ```{r}
 pred.mitoses.test <- prediction(predicted.mitoses.test, test$Class) # Specify the predictions and observed outcome
 perf.mitoses.test <- performance(pred.mitoses.test,"tpr","fpr") # Specify what to calculate, in our case tpr and fpr.
@@ -173,22 +223,64 @@ pred.mitoses.thickness.test <- prediction(predicted.mitoses.thickness.test, test
 perf.mitoses.thickness.test <- performance(pred.mitoses.thickness.test,"tpr","fpr")
 plot(perf.mitoses.thickness.test, add=T, colorize=F, col="red") # Note the "add=T"  in order to plot on a pre existing plot
 # Obtain the AUC (search for how the package ROCR provides the AUC).
-
+m_t_auc_perf = performance(pred.mitoses.thickness.test,measure="auc")
+m_t_auc_value <- m_t_auc_perf@y.values[[1]]
+m_t_auc_value
+# AUC = 0.9546725 for mitosis and thickness
+t_auc_perf = performance(pred.mitoses.test,measure="auc")
+t_auc_value <- t_auc_perf@y.values[[1]]
+t_auc_value
+# AUC = 0.6832663 for mitosis only
 # Calculate the AUC for both models according to the "social party" we discussed in class (the proportion of times from all pairs in which the person with the event got higher probability of the event than the person without the event). Verify that you get the same result of the AUC as provided by the package ROCR.
-...
+m_t_case0 <- subset(mitoses.thickness.test.pred.class, cl == 0)
+m_t_case1 <- subset(mitoses.thickness.test.pred.class, cl == 1)
+
+# TODO pari all of them and compare the probabilites of an event
+tmp <- expand.grid(case0 = m_t_case0, case1 = m_t_case1)
+
 ```
-=> Which model is better from the AUC point of view?
-  
+
+=\> Which model is better from the AUC point of view?
+A: mitoses.thickness has a higher AUC and is therefore concidered better
+
 Let's look at the NRI (net Reclassification Improvement)
+
 ```{r}
 # => Calculate the NRI for those with malignant breast cancer when using mitoses.thickness.train.lrm compared to mitoses.train.lrm. You need to know how many times their probability improved (got higher) with the  mitoses.thickness.train.lrm model, and how many times it worsened. The difference between these two is the net improvement. You can then divide this difference by the number of patients with malignant breast cancer to obtain the proportion. This proportion is the NRI for those in class = 1.
 
+# NRI = ((UP_events-DOWN_events)/n_events)+((UP_noevents - DOWN_noevents)/n_noevents)
+# nri benign
+# total ns (could have also used the test.data but this works as well)
+n_event = sum(mitoses.thickness.test.pred.class$cl == 1)
+n_noevent = sum(sum(mitoses.thickness.test.pred.class$cl == 0))
+
+# sum where the difference between the two models increased for malign patients
+up_event = sum((subset(mitoses.thickness.test.pred.class, cl == 1)$pr - subset(mitoses.test.pred.class, cl == 1)$pr) >= 0)
+# up_events = 55
+down_event = sum((subset(mitoses.thickness.test.pred.class, cl == 1)$pr - subset(mitoses.test.pred.class, cl == 1)$pr) < 0)
+# down_events = 8
+
+# sum where the differenc between the models decreased for benign patents
+up_noevent = sum((subset(mitoses.thickness.test.pred.class, cl == 0)$pr - subset(mitoses.test.pred.class, cl == 0)$pr) <= 0)
+# up_noevent = 109
+down_noevent = sum((subset(mitoses.thickness.test.pred.class, cl == 0)$pr - subset(mitoses.test.pred.class, cl == 0)$pr) > 0)
+# down_noevent = 33
+
+NRI_mt_vs_t_case1 = ((up_event-down_event)/n_event)
+# NRI_mt_vs_t_case1 = 0.7460317
+
 # => Calculate the NRI for those with NO malignant breast cancer when using mitoses.thickness.train.lrm compared to mitoses.train.lrm.
+# They are the
+NRI_m_t_vs_t_case0 = ((up_noevent-down_noevent)/n_noevent)
+# NRI_m_t_vs_t_case0 = 0.5352113
 
-
+NRI_global = ((up_event-down_event)/n_event) + ((up_noevent-down_noevent)/n_noevent)
+# NRI_global = 1.281243
 ```
 
-Now let us look at calibration graphs. We will use "loess" to smooth the data. The parameter "span" controls the amount of smoothing
+Now let us look at calibration graphs.
+We will use "loess" to smooth the data.
+The parameter "span" controls the amount of smoothing
 
 ```{r}
 predicted <- predicted.mitoses.test # predicted.mitoses.test includes the probabilities according to the model that uses only mitoses
@@ -196,23 +288,75 @@ loess.model <- loess(test$Class ~ predicted, span = 1) # make loess model to smo
 proportionCancer <- predict(loess.model) # obtain the smoothed predictions by loess
 ind <- order(predicted) # index of lowest to highest prediction
 xy.predicted.mitoses.test <- data.frame(x=predicted[ind], y= proportionCancer[ind])
-ggplot(xy.predicted.mitoses.test, aes(x=x, y=y)) + geom_line() + geom_abline(intercept=0, slope=1, col="red") + xlab("Predicted probabilities") + ylab("Probability of observed breast cancer")
+ggplot(xy.predicted.mitoses.test, aes(x=x, y=y)) + geom_line() + geom_abline(intercept=0, slope=1, col="red") + xlab("Predicted probabilities") + ylab("Probability of observed breast cancer") + ggtitle("Model mitoses")
 
 # => Plot calibration graph for the probabilities predicted.mitoses.thickness.test
 predicted <- predicted.mitoses.thickness.test # Now we use the other model
+loess.model <- loess(test$Class ~ predicted, span = 1)
+proportionCancer <- predict(loess.model)
+ind <- order(predicted)
+xy.predicted.mitoses.thickness.test <- data.frame(x=predicted[ind], y= proportionCancer[ind])
+ggplot(xy.predicted.mitoses.thickness.test, aes(x=x, y=y)) + geom_line() + geom_abline(intercept=0, slope=1, col="red") + xlab("Predicted probabilities") + ylab("Probability of observed breast cancer") + ggtitle("Model mitoses and thickness")
 
+# calculate the incorrectly refererd patients with cutoff of 30%
+m_t_pos_c30_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.3))
+# calculate the incorecctly classified patients with cancer but probability < 30%
+# A: 11
+m_t_neg_c30_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.3))
+# prediction for mitoses model
+# A: 10
+m_pos_c30_b <- nrow(subset(mitoses.test.pred.class, cl == 0 & pr >= 0.3))
+# A: 8
+# calculate the incorecctly classified patients with cancer but probability < 30%
+m_neg_c30_m <- nrow(subset(mitoses.test.pred.class, cl == 1 & pr <= 0.3))
+# A: 37
+# another try with cutoff at 20%
+# calculate the incorrectly refererd patients with cutoff of 20%
+m_t_pos_c20_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.2))
+# calculate the incorecctly classified patients with cancer but probability < 20%
+# A: 38
+m_t_neg_c20_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.2))
+# prediction for mitoses model
+# A: 3
+# calculate the incorrectly refererd patients with cutoff of 40%
+m_t_pos_c40_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.4))
+# calculate the incorecctly classified patients with cancer but probability < 40%
+# A: 6
+m_t_neg_c40_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.4))
+# prediction for mitoses model
+# A: 12
 ```
-=> Which model do you prefer in terms of calibration?
-=> Suppose we want to implement your models in clinical practice. Someone suggests that when the predicted probabilityis equal or exceeds 30% then the subject is treated as if the patient has breast cancer and referred to additional work up (diagnostics and therapy). Considering the test set and each model separately, how many patients would be incorrectly referred to further work up and how many incorrectly labeled as not having breast cancer. Would you suggest to increase or decrease the cut-off point? Motivate your answer.
 
-For the AUC and Brier score let's be more rigorous and calculate them using bootstrapping in order to use all data (without needing to split) and to also get CIs (confidence intervals) around their estimates. You do not need to change the code, it is there for you to learn from. => What is required from you is to DOCUMENT the code. This is the best way to learn it. You are required to write a comment just above any command marked with "#@" 
+=\> Which model do you prefer in terms of calibration?
+=\> A: the second model using mitoses and thickness seems to have a generally better calibration curve closer to the ideal axes, especially in the higher probability areas.
+
+=\> Suppose we want to implement your models in clinical practice.
+Someone suggests that when the predicted probabilityis equal or exceeds 30% then the subject is treated as if the patient has breast cancer and referred to additional work up (diagnostics and therapy).
+Considering the test set and each model separately, how many patients would be incorrectly referred to further work up and how many incorrectly labeled as not having breast cancer.
+Would you suggest to increase or decrease the cut-off point?
+Motivate your answer.
+=\> A: In the mitoses and thickness model, 11 patients would be referred that had no breast cancer and 10 patients would be classified as benign, although they have breast cancer out f the total 205.
+In the mitoses model 8 would be referred with no breast cancer and 37 with breast cancer would not be referred.
+Regarding the change of cutoff-values there is no definitive answer.
+From a non economical perspective, we would change the cutoff to a lower values like 20% since the to increase the sensitivity for a trade off of lower type 2 error.
+E.g the mitoses thickness model would increase the number of wrongly referred patients to 38, however only 3 patients would be undetected.
+This would however increase the total amount of referrals.
+
+For the AUC and Brier score let's be more rigorous and calculate them using bootstrapping in order to use all data (without needing to split) and to also get CIs (confidence intervals) around their estimates.
+You do not need to change the code, it is there for you to learn from.
+=\> What is required from you is to DOCUMENT the code.
+This is the best way to learn it.
+You are required to write a comment just above any command marked with "\#\@"
 
 Specify formula for the model you want to work with
+
 ```{r}
 my.formula <- formula(Class ~ Cell.shape + Cell.size) # We could have used the same variables as before but let's try other variables.
 ```
 
-Record AUC and Brier score of the model on the original dataset. This will be needed in the next step.
+Record AUC and Brier score of the model on the original dataset.
+This will be needed in the next step.
+
 ```{r}
 my.glm <- glm(my.formula, family="binomial", data=bc) # This fits a logistic regression model. We demonstrate the use of glm (instead of lrm) which is part of base R (no need for a special package). Note that we specify "binomial" if we want a logistic regression model with glm 
 predictions.training <- predict(my.glm, type="response") # and we use "type = response" to get the predicted probabilities. This is different than in lrm. Just be aware of the differences.
@@ -224,6 +368,7 @@ BRIER.ORIGINAL <- mean((predictions.training - (bc$Class))^2) # This is a quick 
 ```
 
 APPLY BOOTSTRAP: Now we will apply bootstrapping to calculate the corrected AUC and Brier, and importantly their CI
+
 ```{r, echo=FALSE, message=FALSE}
 # Let us initialize vector variables. We will fill the vectors during the for-loop below.
 
@@ -235,40 +380,43 @@ BRIERS.m <<- vector(mode="integer", length=0)  # Vector for the Brier scores on 
 AUCS.orig <<- vector(mode="integer", length=0)  # Vector for the AUCs of bootsrtrap models tested on the original dataset
 BRIERS.orig <<- vector(mode="integer", length=0)  # Vector for the Briers of bootsrtrap models tested on the original dataset
 for (i in 1:500){
-  index <- sample(1:nrow(bc), replace=T) #@
-  bootsmpl <- bc[index,] #@
-  boot.m <- glm(my.formula, family="binomial", data=bootsmpl) #@
-  probs.m <- predict(boot.m, type="response") #@
-  probs.orig <- predict(boot.m, newdata = bc, type="response") #@
+  index <- sample(1:nrow(bc), replace=T) #@ Generate a random sample of indicies from the columns of bc
+  bootsmpl <- bc[index,] #@ create a dataset with the actual rows derived form the indicies 
+  boot.m <- glm(my.formula, family="binomial", data=bootsmpl) #@ Fits the logistic regression model on the sample
+  probs.m <- predict(boot.m, type="response") #@ set response type to get probabilities, predict using the fitted linear predictors (sample)
+  probs.orig <- predict(boot.m, newdata = bc, type="response") #@ predict on the whole dataset
 
-  pred.m <- ROCR::prediction(probs.m, bootsmpl$Class)
-  auc.m <- performance(pred.m, "auc") #@
-  a.m <- slot(auc.m, "y.values")[[1]] #@
-  AUCS.m <<- c(AUCS.m, a.m) #@
-  brier.m <- mean((probs.m - bootsmpl$Class)^2) #@
-  BRIERS.m <<- c(BRIERS.m, brier.m) #@
-  pred.orig <- ROCR::prediction(probs.orig, bc$Class)
-  auc.orig <- performance(pred.orig, "auc") #@
-  a.orig <- slot(auc.orig, "y.values")[[1]] #@
-  brier.orig <- mean((probs.orig - (bc$Class))^2) #@
-  AUCS.orig <<- c(AUCS.orig, a.orig) #@
-  BRIERS.orig <<- c(BRIERS.orig, brier.orig) #@
+  pred.m <- ROCR::prediction(probs.m, bootsmpl$Class) #@ predict again using ROCR 
+  auc.m <- performance(pred.m, "auc") #@ receive AUC measure form the pred.m object
+  a.m <- slot(auc.m, "y.values")[[1]] #@ retreive AUC form object
+  AUCS.m <<- c(AUCS.m, a.m) #@ save the AUC object
+  brier.m <- mean((probs.m - bootsmpl$Class)^2) #@ compute Brier score
+  BRIERS.m <<- c(BRIERS.m, brier.m) #@ save Brier score
+  pred.orig <- ROCR::prediction(probs.orig, bc$Class) #@ perform prediction unsing ROCR on the orig dataset
+  auc.orig <- performance(pred.orig, "auc") #@ ask for the auc object 
+  a.orig <- slot(auc.orig, "y.values")[[1]] #@ retrive the auc object
+  brier.orig <- mean((probs.orig - (bc$Class))^2) #@ compute brier score
+  AUCS.orig <<- c(AUCS.orig, a.orig) #@ save AUC score
+  BRIERS.orig <<- c(BRIERS.orig, brier.orig) #@ save briers score
 }
 
 mean(AUCS.m)
-CIauc <- quantile(AUCS.m-AUCS.orig, probs=c(0.025, 0.975)) #@
-CIbrier <- quantile(BRIERS.m - BRIERS.orig, probs=c(0.025, 0.975)) #@
+CIauc <- quantile(AUCS.m-AUCS.orig, probs=c(0.025, 0.975)) #@ create quantiles for confidence intervals fpr the aucs
+CIbrier <- quantile(BRIERS.m - BRIERS.orig, probs=c(0.025, 0.975)) #@ create quantitls for confidence intervals of the brier scores
 
 
-AUC.ORIGINAL - mean(AUCS.m - AUCS.orig) #@
-quantile(AUC.ORIGINAL - (AUCS.m - AUCS.orig), probs=c(0.025, 0.975)) #@
+AUC.ORIGINAL - mean(AUCS.m - AUCS.orig) #@ get difference of the aucs on the original dataset and averavge (mean) Auc
+quantile(AUC.ORIGINAL - (AUCS.m - AUCS.orig), probs=c(0.025, 0.975)) #@ compute confidence interval for AUCs of the original dataset
 
-BRIER.ORIGINAL - mean(BRIERS.m - BRIERS.orig) #@
+BRIER.ORIGINAL - mean(BRIERS.m - BRIERS.orig) #@ get difference of the briar scores of the orifinal dataset and the mean of the brierscires
 quantile(BRIER.ORIGINAL - (BRIERS.m - BRIERS.orig), probs=c(0.025, 0.975)) #@
 
 ```
 
-Up til now we have selected the predictor variables ourselves, but which are the best Class predictors? We need to control for complexity of the model. One way to do it is to use the Akaike Information Criterion.
+Up til now we have selected the predictor variables ourselves, but which are the best Class predictors?
+We need to control for complexity of the model.
+One way to do it is to use the Akaike Information Criterion.
+
 ```{r}
 all.glm <- glm(Class~ . -Class, family=binomial, data=bc) # use all predictors (exclude Class from predictors)
 stepAIC(all.glm, direction="backward")
@@ -276,8 +424,14 @@ stepAIC(all.glm, direction="backward")
 #=> Try direction "forward" and then "both". Do you get the same results?
 ```
 
-Important note: if we wanted to test the strategy for obtaining the best possible model (that is, the model with the best variables) then we need to include the stepAIC variable AIC selection procedure above inside the bootstrap procedure. In other words we would need to add the StepAIC inside the block "APPLY BOOTSTRAP" above.
+Important note: if we wanted to test the strategy for obtaining the best possible model (that is, the model with the best variables) then we need to include the stepAIC variable AIC selection procedure above inside the bootstrap procedure.
+In other words we would need to add the StepAIC inside the block "APPLY BOOTSTRAP" above.
 
-=> implement the variable selection strategy with stepAIC (use the direction "bakward") on the original model and inside the bootstrap sample. What is the optimism-corrected AUC of this strategy? What is the final model?
+=\> implement the variable selection strategy with stepAIC (use the direction "bakward") on the original model and inside the bootstrap sample.
+What is the optimism-corrected AUC of this strategy?
+What is the final model?
 
-=> OPEN part (40% of the grade): implement a strategy based on a non parametric model of your choice like a decision tree or random forests. Compare, in terms of the AUCs and Brier scores, this new strategy with the strategy based on logistic regression with stepAIC. Show clearly if and how you control for complexity in the new strategy and how do you tell whether the differences in performance are statistically significant? You need to find out answers to these questions yourself.
+=\> OPEN part (40% of the grade): implement a strategy based on a non parametric model of your choice like a decision tree or random forests.
+Compare, in terms of the AUCs and Brier scores, this new strategy with the strategy based on logistic regression with stepAIC.
+Show clearly if and how you control for complexity in the new strategy and how do you tell whether the differences in performance are statistically significant?
+You need to find out answers to these questions yourself.
