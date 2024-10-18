@@ -27,7 +27,7 @@ Of course we are more than happy to help you (also) on the open part but it is e
 
 Good luck!
 
-==\> Student Name(s): Matias Tolppanen, Robin Manz ==\> Student number(s): 15779300,
+==\> Student Name(s): Matias Tolppanen, Robin Manz ==\> Student number(s): 15779300, 15687287
 
 Load libraries
 
@@ -232,6 +232,38 @@ t_auc_value
 # Calculate the AUC for both models according to the "social party" we discussed in class (the proportion of times from all pairs in which the person with the event got higher probability of the event than the person without the event). Verify that you get the same result of the AUC as provided by the package ROCR.
 m_t_case0 <- subset(mitoses.thickness.test.pred.class, cl == 0)
 m_t_case1 <- subset(mitoses.thickness.test.pred.class, cl == 1)
+
+# Combine for pair wise comparison in the social party mehtod
+combined_data <- data.frame(
+  pred_mitoses = predicted.mitoses.test,
+  pred_mt = predicted.mitoses.thickness.test,
+  actual = test$Class
+)
+
+# function to calculate the "social party methods"
+calculate_auc <- function(predictions, actual) {
+  pos <- predictions[actual == 1]
+  neg <- predictions[actual == 0]
+  total_pairs <- length(pos) * length(neg)
+  sum <- 0
+  for (i in seq_along(pos)) {
+    sum <- sum + sum(pos[i] > neg) + 0.5 * sum(pos[i] == neg)
+  }
+  auc <- sum / total_pairs
+  return(auc)
+}
+
+# mitosis
+manual_auc_mitoses <- calculate_auc(combined_data$pred_mitoses, combined_data$actual)
+print("AUC for Mitosis using social party")
+print(manual_auc_mitoses)
+
+# mitosis + thickness
+manual_auc_mt <- calculate_auc(combined_data$pred_mt, combined_data$actual)
+print("AUC for mitosis + thickness using social party")
+manual_auc_mt
+
+
 
 # TODO pari all of them and compare the probabilites of an event
 tmp <- expand.grid(case0 = m_t_case0, case1 = m_t_case1)
