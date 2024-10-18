@@ -264,10 +264,6 @@ print("AUC for mitosis + thickness using social party")
 manual_auc_mt
 
 
-
-# TODO pari all of them and compare the probabilites of an event
-tmp <- expand.grid(case0 = m_t_case0, case1 = m_t_case1)
-
 ```
 
 =\> Which model is better from the AUC point of view?
