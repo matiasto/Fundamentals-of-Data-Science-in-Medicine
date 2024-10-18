@@ -13,8 +13,8 @@ Grading: The practical has two parts. The first is a "closed" part, in which you
 
 Good luck!
 
-==> Student Name(s):
-==> Student number(s):
+==> Student Name(s): Matias Tolppanen, Robin Manz
+==> Student number(s): 15779300, 
 
 Load libraries
 ```{r, echo=FALSE}
@@ -43,7 +43,12 @@ nrow(BreastCancer)  # * How many obseravtion (rows) are there?
 BreastCancer
 
 # => Are there any missing values?
+# Yes there are 16 values missin in the column "Bare-nuclei"
 # => Write the code to calculate the number of missing values in each column. You can use whatever suits you. For example you can use "sapply" on BreastCancer to work on all columns while using the is.na function, or (preferably) you can use the power of dplyr commands like "summarise" together with sum and "is.na".
+# check for the whole dataset
+sapply(BreastCancer, function(x) sum(is.na(x)))
+# double check the column "Bare.nuclei"
+sum(is.na(BreastCancer$Bare.nuclei))
 # 
 #
 ```
@@ -51,20 +56,35 @@ BreastCancer
 Preprocess
 ```{r}
 # => We will use only complete cases without any missing values in this excercise. Obtain the data frame "bc" with complete cases. Hint: look at the function complete.cases(). You can use it for example with the filter command of dplyr (or just use base R)
-bc <- .....BreastCancer....  # dataset with complete cases
+bc <- BreastCancer[complete.cases(BreastCancer),]  # dataset with complete cases
+# double check
+sapply(bc, function(x) sum(is.na(x)))
 # => How many obseravtion (rows) are there now?
+nrow(bc)
+# Answer 683
+n_removed = nrow(BreastCancer) - nrow(bc)
+n_removed
 # How many cases did we remove?
+# Answer 16
 
 # remove id column
-bc <-  #=> Remove the "id" column from bc. Note that if you consider to use the "select" command in dplyr then this command may clash with the select command in the MASS library. Therefore use dplyr::select in that case.
+bc <- bc %>% 
+  dplyr::select(-Id)
+
+bc
+  #=> Remove the "id" column from bc. Note that if you consider to use the "select" command in dplyr then this command may clash with the select command in the MASS library. Therefore use dplyr::select in that case.
 
 # => convert the first 9 factors to numeric. You can use a for loop on these variables, or use "mutate_at". 
+View(bc)
+Summary(bc)
+# they are already numeric ??
 .......
 
 # Look at the class variable
 bc$Class
 
 # => change "malignant" into the number 1, and "bening" into the number 0. You can use a simple ifelse, or use the "recode" command in dplyr.
+bc$Class = recode(bc$Class, malignant = 1, benign = 0)
 ```
 
 
@@ -84,17 +104,21 @@ What are the model's characteristics on a test set? Let's create a training and 
 ```{r}
 set.seed(1234) # we fix the seed so that results are the same for all students
 ...
-train <-  ... # => Obrain train set consisting of 70% of the data
-test <-  ... #=> Obtain test set consisting of the rest of observations
-
-mitoses.train.lrm <- ... # => fit lrm model on the training set using only Mitoses, use x=T and y=T
-mitoses.thickness.train.lrm <- ... # => fit lrm model on the training set using  Mitoses and Cl.thickness, use x=T and y=T
+smp_size <- floor(0.70 * nrow(bc))
+train_indexes <- sample(seq_len(nrow(bc)), size = smp_size)
+train <- bc[train_indexes, ]  # => Obrain train set consisting of 70% of the data
+test <-  bc[-train_indexes,]  #=> Obtain test set consisting of the rest of observations
+nrow(train)
+nrow(test)
+mitoses.train.lrm <- lrm(Class ~ Mitoses, x=T, y=T, data=train) # => fit lrm model on the training set using only Mitoses, use x=T and y=T
+mitoses.thickness.train.lrm <- lrm(Class ~ Mitoses + Cl.thickness, x=T, y=T, data=train) # => fit lrm model on the training set using  Mitoses and Cl.thickness, use x=T and y=T
 ```
 
 Now predict on the test set
 ```{r}
-predicted.mitoses.test <- ... # => obtain the predicted probabilities of mitoses.train.lrm on the test set. Hint: use the "predict" function. Important note: make sure you use the right "type" in the command to get probabilities and not log odds.
-predicted.mitoses.thickness.test <- ... # => obtain the predicted probabilities of mitoses.thickness.train.lrm on the test set.Check that they indeed are between 0 and 1 and have no negative numbers etc.
+predicted.mitoses.test <- predict(mitoses.train.lrm, newdata = test, type = "fitted") # => obtain the predicted probabilities of mitoses.train.lrm on the test set. Hint: use the "predict" function. Important note: make sure you use the right "type" in the command to get probabilities and not log odds.
+
+predicted.mitoses.thickness.test <- predict(mitoses.thickness.train.lrm, newdata = test, type = "fitted") # => obtain the predicted probabilities of mitoses.thickness.train.lrm on the test set.Check that they indeed are between 0 and 1 and have no negative numbers etc.
 ```
 Inspect histogram and ranges of probabilities
 ```{r}
