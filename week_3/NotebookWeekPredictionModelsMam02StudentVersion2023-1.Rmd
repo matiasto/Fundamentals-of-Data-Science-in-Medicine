@@ -492,3 +492,95 @@ The AIC corrected model is way more performant
 Compare, in terms of the AUCs and Brier scores, this new strategy with the strategy based on logistic regression with stepAIC.
 Show clearly if and how you control for complexity in the new strategy and how do you tell whether the differences in performance are statistically significant?
 You need to find out answers to these questions yourself.
+
+```{r}
+library(randomForest)
+
+# we chose random forest
+# convert class variable to factor for classification
+bc$Class <- as.factor(bc$Class)
+
+set.seed(42)
+train_indices <- sample(seq_len(nrow(bc)), size = floor(0.7 * nrow(bc)))
+train_rf <- bc[train_indices, ]
+test_rf <- bc[-train_indices, ]
+
+# train
+rf_model <- randomForest(Class ~ ., data=train_rf)
+
+rf_predictions <- predict(rf_model, test_rf, type = "prob")[,2]
+
+pred_rf <- prediction(rf_predictions, as.numeric(test_rf$Class) - 1)
+auc_rf <- performance(pred_rf, "auc")
+auc_rf_value <- auc_rf@y.values[[1]]
+auc_rf_value
+
+full_glm <- glm(Class ~ . - Class, family= binomial, data = train)
+step_model <- stepAIC(full_glm, direction = "backward", trace = FALSE)
+
+lr_predictions <- predict(step_model, newdata = test, type="response")
+
+pred_lr <- prediction(lr_predictions, test$Class)
+auc_lr <- performance(pred_lr, "auc")
+auc_lr_value <- auc_lr@y.values[[1]]
+auc_lr_value
+
+library(glmnet)
+
+
+bootstrap_auc_brier_comparison <- function(data, n_iter = 500) {
+  auc_diff <- numeric(n_iter)
+  brier_diff <- numeric(n_iter)
+  
+  for (i in 1:n_iter) {
+    index <- sample(1:nrow(data), replace = TRUE)
+    bootsmpl <- data[index, ]
+    
+    x_orig <- model.matrix(Class ~ . - 1, data = data)
+    y_orig <- as.numeric(as.character(data$Class))
+    
+    # Random forest on bootstrap sample
+    rf_model <- randomForest(Class ~ ., data = bootsmpl, ntree = 100)
+    rf_probs <- predict(rf_model, data, type = "prob")[,2]
+    rf_pred <- prediction(rf_probs, y_orig)
+    rf_auc <- performance(rf_pred, "auc")@y.values[[1]]
+    
+    # Brier score for Random Forest
+    rf_brier <- mean((rf_probs - y_orig)^2)
+    
+    # LR AIC
+    # For the linear model a AIC is a simple and understandable way to reduce
+    # complexity. However, it may suffer from perfect seperation and may be unstable
+    # especially when multicollinearity exists. Lasso would be a great alternative
+    # since LASSO helps with feature selection and prevents overfitting by shrinking
+    # the coefficients of less important features.
+    full_model <- glm(Class ~ ., family = binomial, data = bootsmpl)
+    step_model <- stepAIC(full_model, direction = "backward", trace = FALSE)
+    lr_probs <- predict(step_model, newdata = data, type = "response")
+    
+    # auc
+    lr_pred <- prediction(lr_probs, as.numeric(as.character(data$Class)))
+    lr_auc <- performance(lr_pred, "auc")@y.values[[1]]
+    
+    # Brier score for Logistic Regression
+    lr_brier <- mean((lr_probs - y_orig)^2)
+    
+    # diff auc
+    auc_diff[i] <- rf_auc - lr_auc
+    brier_diff[i] <- rf_brier - lr_brier
+  }
+  
+  # ci
+  auc_ci <- quantile(auc_diff, probs = c(0.025, 0.975))
+  brier_ci <- quantile(brier_diff, probs = c(0.025, 0.975))
+  
+  return(list(auc_diff = auc_diff, auc_ci = auc_ci, 
+              brier_diff = brier_diff, brier_ci = brier_ci))
+}
+
+set.seed(42)
+bootstrap_results <- bootstrap_auc_brier_comparison(bc)
+bootstrap_results$auc_ci
+bootstrap_results$brier_ci
+
+```
