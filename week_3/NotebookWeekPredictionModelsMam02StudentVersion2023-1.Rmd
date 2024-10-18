@@ -264,10 +264,6 @@ print("AUC for mitosis + thickness using social party")
 manual_auc_mt
 
 
-
-# TODO pari all of them and compare the probabilites of an event
-tmp <- expand.grid(case0 = m_t_case0, case1 = m_t_case1)
-
 ```
 
 =\> Which model is better from the AUC point of view?
@@ -381,15 +377,18 @@ You are required to write a comment just above any command marked with "\#\@"
 Specify formula for the model you want to work with
 
 ```{r}
-my.formula <- formula(Class ~ Cell.shape + Cell.size) # We could have used the same variables as before but let's try other variables.
+# old formula
+# my.formula <- formula(Class ~ Cell.shape + Cell.size) # We could have used the same variables as before but let's try other variables.
 ```
 
 Record AUC and Brier score of the model on the original dataset.
 This will be needed in the next step.
 
 ```{r}
-my.glm <- glm(my.formula, family="binomial", data=bc) # This fits a logistic regression model. We demonstrate the use of glm (instead of lrm) which is part of base R (no need for a special package). Note that we specify "binomial" if we want a logistic regression model with glm 
-predictions.training <- predict(my.glm, type="response") # and we use "type = response" to get the predicted probabilities. This is different than in lrm. Just be aware of the differences.
+my.glm <- glm(Class~. -Class, family="binomial", data=bc) # This fits a logistic regression model. We demonstrate the use of glm (instead of lrm) which is part of base R (no need for a special package). Note that we specify "binomial" if we want a logistic regression model with glm 
+# Add the AIC to the model
+aic.model <- stepAIC(my.glm, direction="backward")
+predictions.training <- predict(aic.model, type="response") # and we use "type = response" to get the predicted probabilities. This is different than in lrm. Just be aware of the differences.
 hist(predictions.training) 
 pred.train <- prediction(predictions.training, bc$Class) # Again we use "prediction"" in ROCR
 auc.train <- performance(pred.train, "auc") # we ask for the auc this time. This provides an object that includes the AUC
@@ -412,9 +411,10 @@ BRIERS.orig <<- vector(mode="integer", length=0)  # Vector for the Briers of boo
 for (i in 1:500){
   index <- sample(1:nrow(bc), replace=T) #@ Generate a random sample of indicies from the columns of bc
   bootsmpl <- bc[index,] #@ create a dataset with the actual rows derived form the indicies 
-  boot.m <- glm(my.formula, family="binomial", data=bootsmpl) #@ Fits the logistic regression model on the sample
-  probs.m <- predict(boot.m, type="response") #@ set response type to get probabilities, predict using the fitted linear predictors (sample)
-  probs.orig <- predict(boot.m, newdata = bc, type="response") #@ predict on the whole dataset
+  boot.m <- glm(Class~. -Class, family="binomial", data=bootsmpl) #@ Fits the logistic regression model on the sample
+  boot.aic <- stepAIC(boot.m, direction="backward", trace = FALSE) # att the AIC to select the predictors and get the new best model
+  probs.m <- predict(boot.aic, type="response") #@ set response type to get probabilities, predict using the fitted linear predictors (sample)
+  probs.orig <- predict(boot.aic, newdata = bc, type="response") #@ predict on the whole dataset
 
   pred.m <- ROCR::prediction(probs.m, bootsmpl$Class) #@ predict again using ROCR 
   auc.m <- performance(pred.m, "auc") #@ receive AUC measure form the pred.m object
@@ -451,7 +451,15 @@ One way to do it is to use the Akaike Information Criterion.
 all.glm <- glm(Class~ . -Class, family=binomial, data=bc) # use all predictors (exclude Class from predictors)
 stepAIC(all.glm, direction="backward")
 #=> which variables are selected?
+# A: The variables are 
+# Cl.thickness, Cell.shape, Marg.adhesion, Bare.nuclei, Bl.cromatin, Normal.nucleoli, Mitoses,
 #=> Try direction "forward" and then "both". Do you get the same results?
+stepAIC(all.glm, direction="forward")
+# A: No the varibales are different
+# Cl.thickness, Cell.size, Cell.shape, Marg.adhesion, Epith.c.size, Bare.nuclei, Bl.cromatin, Normal.nucleoli, Mitoses
+stepAIC(all.glm, direction="both")
+# Cl.thickness, Cell.shape, Marg.adhesion, Bare.nuclei, Bl.cromatin, Normal.nucleoli, Mitoses
+# Same as the "backward"
 ```
 
 Important note: if we wanted to test the strategy for obtaining the best possible model (that is, the model with the best variables) then we need to include the stepAIC variable AIC selection procedure above inside the bootstrap procedure.
@@ -460,6 +468,25 @@ In other words we would need to add the StepAIC inside the block "APPLY BOOTSTRA
 =\> implement the variable selection strategy with stepAIC (use the direction "bakward") on the original model and inside the bootstrap sample.
 What is the optimism-corrected AUC of this strategy?
 What is the final model?
+
+First result (old formula):\
+[1] 0.9831775
+
+[1] 0.9823663 2.5% 97.5% 0.9732648 0.9925058
+
+[1] 0.04185321 2.5% 97.5% 0.03064753 0.05377259
+
+New result (AIC correected):\
+[1] 0.9966469
+
+[1] 0.9951094 2.5% 97.5% 0.9917757 0.9989615
+
+[1] 0.02503523 2.5% 97.5% 0.01609290 0.03369492
+
+The final model includes:\
+Cl.thickness + Cell.shape + Marg.adhesion + Bare.nuclei + Bl.cromatin + Normal.nucleoli + Mitoses
+
+The AIC corrected model is way more performant
 
 =\> OPEN part (40% of the grade): implement a strategy based on a non parametric model of your choice like a decision tree or random forests.
 Compare, in terms of the AUCs and Brier scores, this new strategy with the strategy based on logistic regression with stepAIC.
