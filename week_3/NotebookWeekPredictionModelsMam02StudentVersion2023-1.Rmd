@@ -53,6 +53,8 @@ options(dplyr.print_min = 5L, dplyr.print_max = 5L) # set number of rows to show
 ```{r, message=FALSE}
 data(BreastCancer, package="mlbench")
 names(BreastCancer) # * What are the names of the data frame bc?
+# A: The names are: Id, Cl.thickness, Cell.size, Cell.shape, Marg.adhesion, Epith.c.size
+# Bare.nuclei, Bl.cromatin, Normal.nucleoli, Mitoses, Class
 nrow(BreastCancer)  # * How many obseravtion (rows) are there?
 # Take a moment to look at the description of the database on http://ugrad.stat.ubc.ca/R/library/mlbench/html/BreastCancer.html
 
@@ -163,15 +165,17 @@ hist(predicted.mitoses.thickness.test, breaks=20)
 m_min <- min(predicted.mitoses.test)
 m_max <- max(predicted.mitoses.test)
 m_range <- m_max - m_min
+# 0.7372769
  #* => Obtain range of predicted.mitoses.thickness.test
 
 m_t_min <- min(predicted.mitoses.thickness.test)
 m_t_max <- max(predicted.mitoses.thickness.test)
 m_t_range <- m_t_max - m_t_min
+# 0.9813951
 ```
 
 Q: =\> From the point of view of larger range, which model is better?
-A: =\> predicted.mitoses.thickness.test has a higher range \~ 0.98 which indicates that it has higher max and lower min probabilities compared to the range of \~ 0.76 of predicted.mitosis.test.
+A: =\> predicted.mitoses.thickness.test has a higher range \~ 0.98 which indicates that it has higher max and lower min probabilities compared to the range of \~ 0.74 of predicted.mitosis.test.
 However when looking at the histogramms, the predicted.mitoses.test-set depicts more uncertainty with highly varying predictive values.
 
 Probability densities
@@ -327,46 +331,54 @@ ggplot(xy.predicted.mitoses.thickness.test, aes(x=x, y=y)) + geom_line() + geom_
 # calculate the incorrectly refererd patients with cutoff of 30%
 m_t_pos_c30_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.3))
 # calculate the incorecctly classified patients with cancer but probability < 30%
-# A: 11
+# A: 37
+
 m_t_neg_c30_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.3))
 # prediction for mitoses model
-# A: 10
+# A: 3
+
+
 m_pos_c30_b <- nrow(subset(mitoses.test.pred.class, cl == 0 & pr >= 0.3))
 # A: 8
+
 # calculate the incorecctly classified patients with cancer but probability < 30%
 m_neg_c30_m <- nrow(subset(mitoses.test.pred.class, cl == 1 & pr <= 0.3))
 # A: 37
+
 # another try with cutoff at 20%
 # calculate the incorrectly refererd patients with cutoff of 20%
 m_t_pos_c20_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.2))
 # calculate the incorecctly classified patients with cancer but probability < 20%
-# A: 38
+# A: 37
+
 m_t_neg_c20_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.2))
 # prediction for mitoses model
 # A: 3
+
 # calculate the incorrectly refererd patients with cutoff of 40%
 m_t_pos_c40_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.4))
 # calculate the incorecctly classified patients with cancer but probability < 40%
-# A: 6
+# A: 9 
+
 m_t_neg_c40_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.4))
 # prediction for mitoses model
-# A: 12
+# A: 11
 ```
 
 =\> Which model do you prefer in terms of calibration?
-=\> A: the second model using mitoses and thickness seems to have a generally better calibration curve closer to the ideal axes, especially in the higher probability areas.
+=\> A: The mitoses model, seems to fit closer to the calibration curve ober all. It seems like the mitoses and thickness model is underpredicting in the lower probabilities a bit.
 
 =\> Suppose we want to implement your models in clinical practice.
 Someone suggests that when the predicted probabilityis equal or exceeds 30% then the subject is treated as if the patient has breast cancer and referred to additional work up (diagnostics and therapy).
 Considering the test set and each model separately, how many patients would be incorrectly referred to further work up and how many incorrectly labeled as not having breast cancer.
 Would you suggest to increase or decrease the cut-off point?
 Motivate your answer.
-=\> A: In the mitoses and thickness model, 11 patients would be referred that had no breast cancer and 10 patients would be classified as benign, although they have breast cancer out f the total 205.
+=\> A: Using a cutoff-value of 30%, the mitoses and thickness model, 37 patients would be referred that had no breast cancer and 3 patients would be classified as benign, although they have breast cancer out f the total 205.
 In the mitoses model 8 would be referred with no breast cancer and 37 with breast cancer would not be referred.
 Regarding the change of cutoff-values there is no definitive answer.
-From a non economical perspective, we would change the cutoff to a lower values like 20% since the to increase the sensitivity for a trade off of lower type 2 error.
-E.g the mitoses thickness model would increase the number of wrongly referred patients to 38, however only 3 patients would be undetected.
-This would however increase the total amount of referrals.
+Changing the cutoff to 20% would not change the sensitivity. However increasing the cutoff to 40% the total number of wrong classifications would only be 9 type 2 and 11 type 1. 
+This means that we would trade a higher type 2 error for lower errors total making economic optimisation possible. 
+For a clinical model or a moral perspective however a lower type 2 error is more important thus, a lower threshold like 20% or 30% seems to be appropriate
 
 For the AUC and Brier score let's be more rigorous and calculate them using bootstrapping in order to use all data (without needing to split) and to also get CIs (confidence intervals) around their estimates.
 You do not need to change the code, it is there for you to learn from.
@@ -439,7 +451,7 @@ AUC.ORIGINAL - mean(AUCS.m - AUCS.orig) #@ get difference of the aucs on the ori
 quantile(AUC.ORIGINAL - (AUCS.m - AUCS.orig), probs=c(0.025, 0.975)) #@ compute confidence interval for AUCs of the original dataset
 
 BRIER.ORIGINAL - mean(BRIERS.m - BRIERS.orig) #@ get difference of the briar scores of the orifinal dataset and the mean of the brierscires
-quantile(BRIER.ORIGINAL - (BRIERS.m - BRIERS.orig), probs=c(0.025, 0.975)) #@
+quantile(BRIER.ORIGINAL - (BRIERS.m - BRIERS.orig), probs=c(0.025, 0.975)) #@ get quantilees of the briar scores
 
 ```
 
@@ -492,3 +504,91 @@ The AIC corrected model is way more performant
 Compare, in terms of the AUCs and Brier scores, this new strategy with the strategy based on logistic regression with stepAIC.
 Show clearly if and how you control for complexity in the new strategy and how do you tell whether the differences in performance are statistically significant?
 You need to find out answers to these questions yourself.
+
+```{r}
+library(randomForest)
+
+# we chose random forest
+# convert class variable to factor for classification
+bc$Class <- as.factor(bc$Class)
+
+
+train_indices <- sample(seq_len(nrow(bc)), size = floor(0.7 * nrow(bc)))
+train_rf <- bc[train_indices, ]
+test_rf <- bc[-train_indices, ]
+
+# train
+rf_model <- randomForest(Class ~ ., data=train_rf, ntree=50, mtry=3, nodesize=5) 
+# ntree controls the number of trees, we chose 50 to limit complexity and computation
+# mtry the number of variables per tree. This is recommended to be set at n(params)/3 == 3
+# nodesize sets the size of the tree 5 is chosen to keep the trees small enough
+
+# predict
+rf_predictions <- predict(rf_model, test_rf, type = "prob")[,2]
+
+# auc
+pred_rf <- prediction(rf_predictions, as.numeric(test_rf$Class) - 1)
+auc_rf <- performance(pred_rf, "auc")
+auc_rf_value <- auc_rf@y.values[[1]]
+auc_rf_value
+#[1] 0.9849206
+
+test_rf$Class <- as.numeric(as.character(test_rf$Class))
+brier2 <- mean((rf_predictions - test_rf$Class)^2)
+brier2
+
+# brier of the random forrest model [1] 0.03695941
+# brier of the other model [1] 0.02104547
+
+# convert class to numeric as well
+bc$Class <- as.factor(as.character(bc$Class))
+
+AUCS.rf <<- vector(mode="integer", length=0) # Vector to save the AUCs of bootsrtap models tested in their own boostrap sample.
+BRIERS.rf <<- vector(mode="integer", length=0)  # Vector for the Brier scores on the bootstrap samples
+AUCS.random <<- vector(mode="integer", length=0)  # Vector for the AUCs of bootsrtrap models tested on the original dataset
+BRIERS.random <<- vector(mode="integer", length=0)  # Vector for the Briers of bootsrtrap models tested on the original dataset
+for (i in 1:500){
+  index <- sample(1:nrow(bc), replace=T) #@ Generate a random sample of indicies from the columns of bc
+  bootsmpl <- bc[index,] #@ create a dataset with the actual rows derived form the indicies 
+  boot.m <- randomForest(Class ~ ., data=bootsmpl, ntree=50, mtry=3, nodesize=5)  #@ Fits the random forrest model on the sample test
+  probs.m <- predict(boot.m, type = "prob")[,2] #@ set response type to get probabilities, predict using the fitted linear predictors (sample)
+  probs.orig <- predict(boot.m, newdata = bc, type = "prob")[,2] #@ predict on the whole dataset
+
+  bootsmpl$Class <- as.numeric(as.character(bootsmpl$Class))
+  pred.m <- ROCR::prediction(probs.m, bootsmpl$Class) #@ predict again using ROCR 
+  auc.m <- performance(pred.m, "auc") #@ receive AUC measure form the pred.m object
+  a.m <- slot(auc.m, "y.values")[[1]] #@ retreive AUC form object
+  AUCS.rf <<- c(AUCS.rf, a.m) #@ save the AUC object
+  brier.rf <- mean((probs.m - bootsmpl$Class)^2) #@ compute Brier score
+  BRIERS.rf <<- c(BRIERS.rf, brier.m) #@ save Brier score
+  bc$Class <- as.numeric(as.character(bc$Class))
+  pred.orig <- ROCR::prediction(probs.orig, bc$Class) #@ perform prediction unsing ROCR on the orig dataset
+  auc.orig <- performance(pred.orig, "auc") #@ ask for the auc object 
+  a.orig <- slot(auc.orig, "y.values")[[1]] #@ retrive the auc object
+  brier.orig <- mean((probs.orig - (bc$Class))^2) #@ compute brier score
+  AUCS.random <<- c(AUCS.random, a.orig) #@ save AUC score
+  BRIERS.random <<- c(BRIERS.random, brier.orig) #@ save briers score
+
+  # auc_diff[i] <- rf_auc - lr_auc
+}
+
+ci <- quantile(auc_diff, probs = c(0.025, 0.975))
+
+mean(AUCS.rf)
+# [1] 0.9971638
+CIauc <- quantile(AUCS.rf-AUCS.random, probs=c(0.025, 0.975)) #@ create quantiles for confidence intervals fpr the aucs
+CIbrier <- quantile(BRIERS.rf - BRIERS.random, probs=c(0.025, 0.975)) #@ create quantitls for confidence intervals of the brier scores
+# [1] 0.9970672
+
+AUC.ORIGINAL - mean(AUCS.rf - AUCS.random) #@ get difference of the aucs on the original dataset and averavge (mean) Auc
+quantile(AUC.ORIGINAL - (AUCS.rf - AUCS.random), probs=c(0.025, 0.975)) #@ compute confidence interval for AUCs of the original dataset
+#   2.5%     97.5% 
+# 0.9931169 1.0012109 
+
+BRIER.ORIGINAL - mean(BRIERS.rf - BRIERS.random) #@ get difference of the briar scores of the orifinal dataset and the mean of the brierscores
+# [1] 0.003930203
+quantile(BRIER.ORIGINAL - (BRIERS.rf - BRIERS.random), probs=c(0.025, 0.975)) #@ get quantilees of the briar scores
+#        2.5%        97.5% 
+# 0.0003663336 0.0078287980 
+
+```
