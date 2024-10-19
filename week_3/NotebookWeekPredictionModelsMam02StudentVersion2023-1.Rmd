@@ -56,6 +56,7 @@ names(BreastCancer) # * What are the names of the data frame bc?
 # A: The names are: Id, Cl.thickness, Cell.size, Cell.shape, Marg.adhesion, Epith.c.size
 # Bare.nuclei, Bl.cromatin, Normal.nucleoli, Mitoses, Class
 nrow(BreastCancer)  # * How many obseravtion (rows) are there?
+# A: 699
 # Take a moment to look at the description of the database on http://ugrad.stat.ubc.ca/R/library/mlbench/html/BreastCancer.html
 
 # Print the dataset
