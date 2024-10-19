@@ -512,83 +512,87 @@ library(randomForest)
 # convert class variable to factor for classification
 bc$Class <- as.factor(bc$Class)
 
-
+set.seed(42)
 train_indices <- sample(seq_len(nrow(bc)), size = floor(0.7 * nrow(bc)))
 train_rf <- bc[train_indices, ]
 test_rf <- bc[-train_indices, ]
 
 # train
-rf_model <- randomForest(Class ~ ., data=train_rf, ntree=50, mtry=3, nodesize=5) 
-# ntree controls the number of trees, we chose 50 to limit complexity and computation
-# mtry the number of variables per tree. This is recommended to be set at n(params)/3 == 3
-# nodesize sets the size of the tree 5 is chosen to keep the trees small enough
+rf_model <- randomForest(Class ~ ., data=train_rf)
 
-# predict
 rf_predictions <- predict(rf_model, test_rf, type = "prob")[,2]
 
-# auc
 pred_rf <- prediction(rf_predictions, as.numeric(test_rf$Class) - 1)
 auc_rf <- performance(pred_rf, "auc")
 auc_rf_value <- auc_rf@y.values[[1]]
 auc_rf_value
-#[1] 0.9849206
 
-test_rf$Class <- as.numeric(as.character(test_rf$Class))
-brier2 <- mean((rf_predictions - test_rf$Class)^2)
-brier2
+full_glm <- glm(Class ~ . - Class, family= binomial, data = train)
+step_model <- stepAIC(full_glm, direction = "backward", trace = FALSE)
 
-# brier of the random forrest model [1] 0.03695941
-# brier of the other model [1] 0.02104547
+lr_predictions <- predict(step_model, newdata = test, type="response")
 
-# convert class to numeric as well
-bc$Class <- as.factor(as.character(bc$Class))
+pred_lr <- prediction(lr_predictions, test$Class)
+auc_lr <- performance(pred_lr, "auc")
+auc_lr_value <- auc_lr@y.values[[1]]
+auc_lr_value
 
-AUCS.rf <<- vector(mode="integer", length=0) # Vector to save the AUCs of bootsrtap models tested in their own boostrap sample.
-BRIERS.rf <<- vector(mode="integer", length=0)  # Vector for the Brier scores on the bootstrap samples
-AUCS.random <<- vector(mode="integer", length=0)  # Vector for the AUCs of bootsrtrap models tested on the original dataset
-BRIERS.random <<- vector(mode="integer", length=0)  # Vector for the Briers of bootsrtrap models tested on the original dataset
-for (i in 1:500){
-  index <- sample(1:nrow(bc), replace=T) #@ Generate a random sample of indicies from the columns of bc
-  bootsmpl <- bc[index,] #@ create a dataset with the actual rows derived form the indicies 
-  boot.m <- randomForest(Class ~ ., data=bootsmpl, ntree=50, mtry=3, nodesize=5)  #@ Fits the random forrest model on the sample test
-  probs.m <- predict(boot.m, type = "prob")[,2] #@ set response type to get probabilities, predict using the fitted linear predictors (sample)
-  probs.orig <- predict(boot.m, newdata = bc, type = "prob")[,2] #@ predict on the whole dataset
+library(glmnet)
 
-  bootsmpl$Class <- as.numeric(as.character(bootsmpl$Class))
-  pred.m <- ROCR::prediction(probs.m, bootsmpl$Class) #@ predict again using ROCR 
-  auc.m <- performance(pred.m, "auc") #@ receive AUC measure form the pred.m object
-  a.m <- slot(auc.m, "y.values")[[1]] #@ retreive AUC form object
-  AUCS.rf <<- c(AUCS.rf, a.m) #@ save the AUC object
-  brier.rf <- mean((probs.m - bootsmpl$Class)^2) #@ compute Brier score
-  BRIERS.rf <<- c(BRIERS.rf, brier.m) #@ save Brier score
-  bc$Class <- as.numeric(as.character(bc$Class))
-  pred.orig <- ROCR::prediction(probs.orig, bc$Class) #@ perform prediction unsing ROCR on the orig dataset
-  auc.orig <- performance(pred.orig, "auc") #@ ask for the auc object 
-  a.orig <- slot(auc.orig, "y.values")[[1]] #@ retrive the auc object
-  brier.orig <- mean((probs.orig - (bc$Class))^2) #@ compute brier score
-  AUCS.random <<- c(AUCS.random, a.orig) #@ save AUC score
-  BRIERS.random <<- c(BRIERS.random, brier.orig) #@ save briers score
 
-  # auc_diff[i] <- rf_auc - lr_auc
+bootstrap_auc_brier_comparison <- function(data, n_iter = 500) {
+  auc_diff <- numeric(n_iter)
+  brier_diff <- numeric(n_iter)
+  
+  for (i in 1:n_iter) {
+    index <- sample(1:nrow(data), replace = TRUE)
+    bootsmpl <- data[index, ]
+    
+    x_orig <- model.matrix(Class ~ . - 1, data = data)
+    y_orig <- as.numeric(as.character(data$Class))
+    
+    # Random forest on bootstrap sample
+    rf_model <- randomForest(Class ~ ., data = bootsmpl, ntree = 100)
+    rf_probs <- predict(rf_model, data, type = "prob")[,2]
+    rf_pred <- prediction(rf_probs, y_orig)
+    rf_auc <- performance(rf_pred, "auc")@y.values[[1]]
+    
+    # Brier score for Random Forest
+    rf_brier <- mean((rf_probs - y_orig)^2)
+    
+    # LR AIC
+    # For the linear model a AIC is a simple and understandable way to reduce
+    # complexity. However, it may suffer from perfect seperation and may be unstable
+    # especially when multicollinearity exists. Lasso would be a great alternative
+    # since LASSO helps with feature selection and prevents overfitting by shrinking
+    # the coefficients of less important features.
+    full_model <- glm(Class ~ ., family = binomial, data = bootsmpl)
+    step_model <- stepAIC(full_model, direction = "backward", trace = FALSE)
+    lr_probs <- predict(step_model, newdata = data, type = "response")
+    
+    # auc
+    lr_pred <- prediction(lr_probs, as.numeric(as.character(data$Class)))
+    lr_auc <- performance(lr_pred, "auc")@y.values[[1]]
+    
+    # Brier score for Logistic Regression
+    lr_brier <- mean((lr_probs - y_orig)^2)
+    
+    # diff auc
+    auc_diff[i] <- rf_auc - lr_auc
+    brier_diff[i] <- rf_brier - lr_brier
+  }
+  
+  # ci
+  auc_ci <- quantile(auc_diff, probs = c(0.025, 0.975))
+  brier_ci <- quantile(brier_diff, probs = c(0.025, 0.975))
+  
+  return(list(auc_diff = auc_diff, auc_ci = auc_ci, 
+              brier_diff = brier_diff, brier_ci = brier_ci))
 }
 
-ci <- quantile(auc_diff, probs = c(0.025, 0.975))
-
-mean(AUCS.rf)
-# [1] 0.9971638
-CIauc <- quantile(AUCS.rf-AUCS.random, probs=c(0.025, 0.975)) #@ create quantiles for confidence intervals fpr the aucs
-CIbrier <- quantile(BRIERS.rf - BRIERS.random, probs=c(0.025, 0.975)) #@ create quantitls for confidence intervals of the brier scores
-# [1] 0.9970672
-
-AUC.ORIGINAL - mean(AUCS.rf - AUCS.random) #@ get difference of the aucs on the original dataset and averavge (mean) Auc
-quantile(AUC.ORIGINAL - (AUCS.rf - AUCS.random), probs=c(0.025, 0.975)) #@ compute confidence interval for AUCs of the original dataset
-#   2.5%     97.5% 
-# 0.9931169 1.0012109 
-
-BRIER.ORIGINAL - mean(BRIERS.rf - BRIERS.random) #@ get difference of the briar scores of the orifinal dataset and the mean of the brierscores
-# [1] 0.003930203
-quantile(BRIER.ORIGINAL - (BRIERS.rf - BRIERS.random), probs=c(0.025, 0.975)) #@ get quantilees of the briar scores
-#        2.5%        97.5% 
-# 0.0003663336 0.0078287980 
+set.seed(42)
+bootstrap_results <- bootstrap_auc_brier_comparison(bc)
+bootstrap_results$auc_ci
+bootstrap_results$brier_ci
 
 ```
