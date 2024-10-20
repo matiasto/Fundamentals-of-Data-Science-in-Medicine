@@ -53,7 +53,10 @@ options(dplyr.print_min = 5L, dplyr.print_max = 5L) # set number of rows to show
 ```{r, message=FALSE}
 data(BreastCancer, package="mlbench")
 names(BreastCancer) # * What are the names of the data frame bc?
+# A: The names are: Id, Cl.thickness, Cell.size, Cell.shape, Marg.adhesion, Epith.c.size
+# Bare.nuclei, Bl.cromatin, Normal.nucleoli, Mitoses, Class
 nrow(BreastCancer)  # * How many obseravtion (rows) are there?
+# A: 699
 # Take a moment to look at the description of the database on http://ugrad.stat.ubc.ca/R/library/mlbench/html/BreastCancer.html
 
 # Print the dataset
@@ -163,15 +166,17 @@ hist(predicted.mitoses.thickness.test, breaks=20)
 m_min <- min(predicted.mitoses.test)
 m_max <- max(predicted.mitoses.test)
 m_range <- m_max - m_min
+# 0.7372769
  #* => Obtain range of predicted.mitoses.thickness.test
 
 m_t_min <- min(predicted.mitoses.thickness.test)
 m_t_max <- max(predicted.mitoses.thickness.test)
 m_t_range <- m_t_max - m_t_min
+# 0.9813951
 ```
 
 Q: =\> From the point of view of larger range, which model is better?
-A: =\> predicted.mitoses.thickness.test has a higher range \~ 0.98 which indicates that it has higher max and lower min probabilities compared to the range of \~ 0.76 of predicted.mitosis.test.
+A: =\> predicted.mitoses.thickness.test has a higher range \~ 0.98 which indicates that it has higher max and lower min probabilities compared to the range of \~ 0.74 of predicted.mitosis.test.
 However when looking at the histogramms, the predicted.mitoses.test-set depicts more uncertainty with highly varying predictive values.
 
 Probability densities
@@ -327,46 +332,54 @@ ggplot(xy.predicted.mitoses.thickness.test, aes(x=x, y=y)) + geom_line() + geom_
 # calculate the incorrectly refererd patients with cutoff of 30%
 m_t_pos_c30_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.3))
 # calculate the incorecctly classified patients with cancer but probability < 30%
-# A: 11
+# A: 37
+
 m_t_neg_c30_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.3))
 # prediction for mitoses model
-# A: 10
+# A: 3
+
+
 m_pos_c30_b <- nrow(subset(mitoses.test.pred.class, cl == 0 & pr >= 0.3))
 # A: 8
+
 # calculate the incorecctly classified patients with cancer but probability < 30%
 m_neg_c30_m <- nrow(subset(mitoses.test.pred.class, cl == 1 & pr <= 0.3))
 # A: 37
+
 # another try with cutoff at 20%
 # calculate the incorrectly refererd patients with cutoff of 20%
 m_t_pos_c20_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.2))
 # calculate the incorecctly classified patients with cancer but probability < 20%
-# A: 38
+# A: 37
+
 m_t_neg_c20_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.2))
 # prediction for mitoses model
 # A: 3
+
 # calculate the incorrectly refererd patients with cutoff of 40%
 m_t_pos_c40_b <- nrow(subset(mitoses.thickness.test.pred.class, cl == 0 & pr >= 0.4))
 # calculate the incorecctly classified patients with cancer but probability < 40%
-# A: 6
+# A: 9 
+
 m_t_neg_c40_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 0.4))
 # prediction for mitoses model
-# A: 12
+# A: 11
 ```
 
 =\> Which model do you prefer in terms of calibration?
-=\> A: the second model using mitoses and thickness seems to have a generally better calibration curve closer to the ideal axes, especially in the higher probability areas.
+=\> A: The mitoses model, seems to fit closer to the calibration curve ober all. It seems like the mitoses and thickness model is underpredicting in the lower probabilities a bit.
 
 =\> Suppose we want to implement your models in clinical practice.
 Someone suggests that when the predicted probabilityis equal or exceeds 30% then the subject is treated as if the patient has breast cancer and referred to additional work up (diagnostics and therapy).
 Considering the test set and each model separately, how many patients would be incorrectly referred to further work up and how many incorrectly labeled as not having breast cancer.
 Would you suggest to increase or decrease the cut-off point?
 Motivate your answer.
-=\> A: In the mitoses and thickness model, 11 patients would be referred that had no breast cancer and 10 patients would be classified as benign, although they have breast cancer out f the total 205.
+=\> A: Using a cutoff-value of 30%, the mitoses and thickness model, 37 patients would be referred that had no breast cancer and 3 patients would be classified as benign, although they have breast cancer out f the total 205.
 In the mitoses model 8 would be referred with no breast cancer and 37 with breast cancer would not be referred.
 Regarding the change of cutoff-values there is no definitive answer.
-From a non economical perspective, we would change the cutoff to a lower values like 20% since the to increase the sensitivity for a trade off of lower type 2 error.
-E.g the mitoses thickness model would increase the number of wrongly referred patients to 38, however only 3 patients would be undetected.
-This would however increase the total amount of referrals.
+Changing the cutoff to 20% would not change the sensitivity. However increasing the cutoff to 40% the total number of wrong classifications would only be 9 type 2 and 11 type 1. 
+This means that we would trade a higher type 2 error for lower errors total making economic optimisation possible. 
+For a clinical model or a moral perspective however a lower type 2 error is more important thus, a lower threshold like 20% or 30% seems to be appropriate
 
 For the AUC and Brier score let's be more rigorous and calculate them using bootstrapping in order to use all data (without needing to split) and to also get CIs (confidence intervals) around their estimates.
 You do not need to change the code, it is there for you to learn from.
@@ -439,7 +452,7 @@ AUC.ORIGINAL - mean(AUCS.m - AUCS.orig) #@ get difference of the aucs on the ori
 quantile(AUC.ORIGINAL - (AUCS.m - AUCS.orig), probs=c(0.025, 0.975)) #@ compute confidence interval for AUCs of the original dataset
 
 BRIER.ORIGINAL - mean(BRIERS.m - BRIERS.orig) #@ get difference of the briar scores of the orifinal dataset and the mean of the brierscires
-quantile(BRIER.ORIGINAL - (BRIERS.m - BRIERS.orig), probs=c(0.025, 0.975)) #@
+quantile(BRIER.ORIGINAL - (BRIERS.m - BRIERS.orig), probs=c(0.025, 0.975)) #@ get quantilees of the briar scores
 
 ```
 
@@ -506,7 +519,10 @@ train_rf <- bc[train_indices, ]
 test_rf <- bc[-train_indices, ]
 
 # train
-rf_model <- randomForest(Class ~ ., data=train_rf)
+rf_model <- randomForest(Class ~ ., data=train_rf, ntree = 100, mtry = 3, nodesize = 2)
+# ntree = 100 number of trees generated 100 to limit complexity while maintaining computability
+# mtry = 3 number of variables per tree (sqrt(n_predictors)) we have 9 predictors
+# nodesize = 2 since it is said this helps with overfitting
 
 rf_predictions <- predict(rf_model, test_rf, type = "prob")[,2]
 
@@ -514,6 +530,8 @@ pred_rf <- prediction(rf_predictions, as.numeric(test_rf$Class) - 1)
 auc_rf <- performance(pred_rf, "auc")
 auc_rf_value <- auc_rf@y.values[[1]]
 auc_rf_value
+# 0.9837037
+BRIER.ORIGINAL <- mean((predictions.training - (bc$Class))^2)
 
 full_glm <- glm(Class ~ . - Class, family= binomial, data = train)
 step_model <- stepAIC(full_glm, direction = "backward", trace = FALSE)
@@ -524,13 +542,18 @@ pred_lr <- prediction(lr_predictions, test$Class)
 auc_lr <- performance(pred_lr, "auc")
 auc_lr_value <- auc_lr@y.values[[1]]
 auc_lr_value
+# 0.9966465
 
 library(glmnet)
 
 
 bootstrap_auc_brier_comparison <- function(data, n_iter = 500) {
   auc_diff <- numeric(n_iter)
+  rf_aucs <- numeric(n_iter)
+  lr_aucs <- numeric(n_iter)
   brier_diff <- numeric(n_iter)
+  rf_briers <- numeric(n_iter)
+  lr_briers <- numeric(n_iter)
   
   for (i in 1:n_iter) {
     index <- sample(1:nrow(data), replace = TRUE)
@@ -540,14 +563,14 @@ bootstrap_auc_brier_comparison <- function(data, n_iter = 500) {
     y_orig <- as.numeric(as.character(data$Class))
     
     # Random forest on bootstrap sample
-    rf_model <- randomForest(Class ~ ., data = bootsmpl, ntree = 100)
+    rf_model <- randomForest(Class ~ ., data = bootsmpl, ntree = 100, mtry = 3, nodesize = 2)
     rf_probs <- predict(rf_model, data, type = "prob")[,2]
     rf_pred <- prediction(rf_probs, y_orig)
     rf_auc <- performance(rf_pred, "auc")@y.values[[1]]
-    
+    rf_aucs[i] <- rf_auc
     # Brier score for Random Forest
     rf_brier <- mean((rf_probs - y_orig)^2)
-    
+    rf_briers[i] <- rf_brier
     # LR AIC
     # For the linear model a AIC is a simple and understandable way to reduce
     # complexity. However, it may suffer from perfect seperation and may be unstable
@@ -561,26 +584,58 @@ bootstrap_auc_brier_comparison <- function(data, n_iter = 500) {
     # auc
     lr_pred <- prediction(lr_probs, as.numeric(as.character(data$Class)))
     lr_auc <- performance(lr_pred, "auc")@y.values[[1]]
-    
+    lr_aucs[i] <- lr_auc
     # Brier score for Logistic Regression
     lr_brier <- mean((lr_probs - y_orig)^2)
+    lr_briers[i] <- lr_brier
     
     # diff auc
     auc_diff[i] <- rf_auc - lr_auc
     brier_diff[i] <- rf_brier - lr_brier
   }
-  
+  # aucs 
+  rf_mean_auc = mean(rf_aucs)
+  lr_mean_auc = mean(lr_aucs)
+
+  # briers
+  rf_mean_brier = mean(rf_briers)
+  lr_mean_brier = mean(lr_briers)
   # ci
   auc_ci <- quantile(auc_diff, probs = c(0.025, 0.975))
+  auc_diff_mean <- mean(auc_diff)
   brier_ci <- quantile(brier_diff, probs = c(0.025, 0.975))
+  brier_diff_mean <- mean(brier_diff)
   
   return(list(auc_diff = auc_diff, auc_ci = auc_ci, 
-              brier_diff = brier_diff, brier_ci = brier_ci))
+              brier_diff = brier_diff, brier_ci = brier_ci,
+              auc_diff_mean=auc_diff_mean,
+              brier_diff_mean=brier_diff_mean,
+              rf_mean_auc=rf_mean_auc,
+              lr_mean_auc=lr_mean_auc,
+              rf_mean_brier=rf_mean_brier,
+              lr_mean_brier=lr_mean_brier ))
 }
 
 set.seed(42)
 bootstrap_results <- bootstrap_auc_brier_comparison(bc)
+# AUC differences between the model
+bootstrap_results$auc_diff_mean
+# 0.002523437
+# confidence interval 
 bootstrap_results$auc_ci
+
+#        2.5%         97.5% 
+# -0.0003940263  0.0043040164 
+# Brier score differences between the models
+bootstrap_results$brier_diff_mean
+# -0.01131186
+# confidence interval
 bootstrap_results$brier_ci
+#        2.5%        97.5% 
+# -0.015215178 -0.006728434 
+
+# The bootstrap results suggest that the random forest model performes slightly better than the linear regression model with a on average higher auc and a slightly lower brier score. 
+# However for the auc the confidence interval suggests that it could alsoo be slightly worse thatn the linear regression model, therefore this result is not significant.
+# The lower Brier score however is significantly different in favor of the random forest model
 
 ```
