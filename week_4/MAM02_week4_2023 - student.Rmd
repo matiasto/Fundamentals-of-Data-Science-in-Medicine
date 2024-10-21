@@ -1,0 +1,253 @@
+---
+title: "MAM02 assignment week 4"
+output: html_notebook 
+---
+
+SVM and ensemble methods are elective approaches when data set is characterized by a relatively large feature set and by non-linear decision boundaries. In our case, the dataset corresponds to the simulation of 250 proteins measurements of 1,000 individuals (500 cases [cc = 1] and 500 controls [cc = 0]). Data were split into a training set (70% of the whole data, 700 individuals: 350 cases and 350 controls) and a test set (30% of the whole data, 300 individuals: 150 cases and 150 controls). Of the 250 simulated proteins distributions:
+
+-   some were simulated to be weakly associated to the case/control condition (cc),
+-   some were simulated to be strongly associated to the case/control condition,
+-   others were simulated to be non-associated associated to the case/control condition with no difference in terms of distribution between cases and controls.
+
+# Libraries
+
+```{r}
+library("pROC")
+library("e1071")
+library("randomForest")
+library("ggplot2")
+```
+
+# 1. Import data
+
+```{r}
+raw.training <- read.table("simulatedConcentrations.recoded.training.txt", sep = "\t", header = T)
+raw.test <- read.table("simulatedConcentrations.recoded.test.txt", sep = "\t", header = T)
+raw.training$cc <- as.factor(raw.training$cc)
+raw.test$cc <- as.factor(raw.test$cc)
+```
+
+## Que 1.1:
+
+**How many rows and columns are in the training and test sets?**
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 1.2: 
+
+Compute the correlation matrix for all columns in the training set and plot a histogram of the correlations. Explain in your own words what you can deduce about the data from this. Are there any strong correlations between the variables in the set? Are most correlations positive or negative?
+
+```{r}
+# Make a copy of raw.training where the outcome is int instead of factor (needed to include outcome in correlation matrix)
+<complete code>
+
+# Compute the correlation matrix
+# check the cor() function in the help
+<complete code>
+
+# Create histogram via r-base function
+# check the hist() function in the help
+<complete code>
+
+# Or, create a histogram using ggplot2
+# You can use ggplot() + geom_histogram() + theme_linedraw()
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 1.3:
+
+Using the correlation matrix from the previous question, plot a heatmap of the correlations. \
+For ease of checking - try to make its colors range from red (-1) to white (0) to blue (1).\
+If you are unfamiliar with the heatmap visualization [here](https://www.jmp.com/en_us/statistics-knowledge-portal/exploratory-data-analysis/heatmap.html) is a short explanation
+
+-   Does the heatmap tell you anything further than the histogram?
+
+-   Where would you look at in the heatmap if you wanted to see correlations between the outcome with the other variables?
+
+
+```{r}
+# Plot the heatmap
+# check the heatmap() function in the help
+<complete code>
+```
+
+Answer: **include answers**
+
+## Que 1.4:
+
+**Is it a balanced problem (same number of elements in each class)? Are there any missing values in either train or test sets?**
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+# 2. Support vector machines
+
+Fit a linear SVM on the training set data with C classification.
+
+Before we start working on the full 250 variables, just for the fun of if, we created some models with only 2 proteins (to allow visualization in a plot). We selected 2 of the proteins that seem to be more linearly related to the outcome.
+
+First let's plot these 2 proteins to have a visual idea of the dataset, we will use a radial kernel for now...
+```{r}
+
+qplot(p_141, p_66, data = raw.training, color = cc )
+
+# Now lets create a model using the different kernels and plot the results to see how the kernels act. We will compare the kernels in a later exercise.
+
+lsvm.fit_only2 <- svm(cc ~ p_141+p_66, data = raw.training, type = "C-classification", kernel = "radial", probability = T)
+summary(lsvm.fit_only2)
+
+# performance/AUC
+<complete code>
+auc_forFun <- 
+confusiontable_forFun <- 
+accuracy_forFun <- 
+missclassification_forFun <- 
+confusionMatrix(confusiontable_forFun)
+
+# Finally lets plot it
+plot(lsvm.fit_only2, raw.training, p_141~p_66)
+
+#Lets also take a look at models for the same 2 proteins but using different kernels and see how the AUC is affected
+lsvm.fit_only2_linear <- svm(cc ~ p_141+p_66, data = raw.training, type = "C-classification", kernel = "linear", probability = T)
+lsvm.fit_only2_poly <- svm(cc ~ p_141+p_66, data = raw.training, type = "C-classification", kernel = "polynomial", probability = T)
+lsvm.fit_only2_radial <- svm(cc ~ p_141+p_66, data = raw.training, type = "C-classification", kernel = "radial", probability = T)
+lsvm.fit_only2_sigmoid <- svm(cc ~ p_141+p_66, data = raw.training, type = "C-classification", kernel = "sigmoid", probability = T)
+plot(lsvm.fit_only2_linear, raw.training, p_141~p_66)
+plot(lsvm.fit_only2_poly, raw.training, p_141~p_66)
+plot(lsvm.fit_only2_radial, raw.training, p_141~p_66)
+plot(lsvm.fit_only2_sigmoid, raw.training, p_141~p_66)
+
+# And their AUC`s
+<complete code>
+```
+We performed the steps above even though they are not part of the assignment to be able to have a better understanding of the SVM model and of the dataset we are working with (with visualization)...
+
+Now lets stop playing around with only 2 dimensions... back to the assignment, lets fit the SVM using 250 variables (there are ways to visualize 5 dimensions in a plot (using color and size for example), or 6 dimensions (adding frequency of vibration) if animation is used... for 250 dimensions it is impractical)
+```{r}
+lsvm.fit <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel = "linear", probability = T)
+```
+
+## Que 2.1
+
+Check the `svm` API in the help to help you answer this. **What is the meaning of setting `probability = T`? What does change if you set it to false? And if you remove it, what is the default? ** Look at the documentation and also try setting it differently in your code and check what changes.
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 2.2
+
+Inspect the resulting support vectors (number and type). Check the `svm` API in the help and think how you can achieve this. **What is the percentage of training data used for classification? Which support vector has the largest magnitude? Which has the smallest?**
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 2.3
+
+Predict the class of the test set and estimate the discriminative performances by computing the AUC. **What is the AUC? Is this bad, acceptable, good, ...? Optional: What is the 95% CI of the AUC? what does it mean?**
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 2.4
+
+Repeat the exercise by varying the value of the parameter "cost" and generate a table of results with the value of cost and the corresponding number of support vectors, and AUC on the test data. Use at least these 3 costs: [0.1, 1, 10]  **What is the best value for the cost function in terms of AUC? How did the number of support vectors change with respect to changes in the cost?**
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 2.5
+
+Try different kernel functions and assess the discriminative performances comparing the results with those obtained in the previous point. Try a radial, polynomial, and sigmoid kernel in addition to the linear you already tried before.**What is the best classification model on the test set? Optional: Was the second-best model(s) significantly worse than the first one(s) (did the 95% CI ranges of their AUCs overlap)?** Consider also the linear kernel.
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+# 3. Random Forests
+
+Run the RF on the training data. Random forests analysis can be performed by the randomForest function.
+
+```{r}
+rf.fit <- randomForest(cc ~ ., data = raw.training, importance = T)
+```
+
+## Que 3.1
+
+**What is the output of the model when applied to new data (observations here)? If you want to switch to probabilities/classes, what can you change?** Look at the documentation and also try setting it differently in your code and check what changes.
+
+```{r fig.height=10, fig.width=12}
+<complete code>
+```
+
+## Que 3.2
+
+Check and think about the type of tree that should be used here and how the type of tree can be used in general.
+**Which type of trees are being built (regression or classification)? Which one do you need in this case and why? When do you use one type or the other? How can you set and check the proper type?** Look at the documentation and also try setting it differently and check what changes.
+
+```{r fig.height=10, fig.width=12}
+<complete code>
+```
+
+## Que 3.3
+
+Assess the importance of each predictor and plot them. Are you able to interpret the results? **What are the most important variables? Why?** Plot the relationship between protein value and outcome (cc) for both a protein found to be very important and a protein of low importance
+
+```{r fig.height=10, fig.width=12}
+# You can check the importance() and varImPlot() functions
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 3.4
+
+Predict the class of the test set and compute AUC. **What is the AUC? Is this bad, acceptable, good, ...?**
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 3.5
+
+Try to improve the discriminative performances by increasing the number of trees (500-1000-2500) to be grown and assess the AUC. **What is the best number of trees on the test set?**
+
+```{r}
+<complete code>
+```
+
+Answer: **include answer**
+
+## Que 3.6
+
+**How does the performance of RF compare with the one of SVM? For which cases did SVM/RF struggle the most to make a correct prediction?**
+
+```{md}
+<complete code>
+```
+
+Answer: **include answer**
