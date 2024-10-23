@@ -12,6 +12,7 @@ SVM and ensemble methods are elective approaches when data set is characterized 
 # Libraries
 
 ```{r}
+install.packages("e1071")
 library("pROC")
 library("e1071")
 library("randomForest")
@@ -32,10 +33,10 @@ raw.test$cc <- as.factor(raw.test$cc)
 **How many rows and columns are in the training and test sets?**
 
 ```{r}
-<complete code>
+ncol(raw.training)
 ```
 
-Answer: **include answer**
+Answer: *A: 251
 
 ## Que 1.2: 
 
@@ -43,22 +44,29 @@ Compute the correlation matrix for all columns in the training set and plot a hi
 
 ```{r}
 # Make a copy of raw.training where the outcome is int instead of factor (needed to include outcome in correlation matrix)
-<complete code>
+raw.training.outcome_int <- raw.training # copy
+raw.training.outcome_int$cc <- as.integer(raw.training.outcome_int$cc) # convert cc to int
 
 # Compute the correlation matrix
 # check the cor() function in the help
-<complete code>
+correlations <- cor(raw.training.outcome_int)
+sum(correlations > 0)
+sum(correlations <= 0)
+# There ae more positive ones overall but by a small margin
+
 
 # Create histogram via r-base function
 # check the hist() function in the help
-<complete code>
+hist(correlations, breaks = 50)
+
 
 # Or, create a histogram using ggplot2
 # You can use ggplot() + geom_histogram() + theme_linedraw()
-<complete code>
+# No
 ```
 
-Answer: **include answer**
+Answer: There are slighly more positive correalations than negative ones, but this is only marginal. 
+The correlations seem to be normally distributed around 0. (TODO can you say that?)
 
 ## Que 1.3:
 
@@ -74,20 +82,35 @@ If you are unfamiliar with the heatmap visualization [here](https://www.jmp.com/
 ```{r}
 # Plot the heatmap
 # check the heatmap() function in the help
-<complete code>
+#breaks
+bk <- c(seq(-1,1,by=0.1))
+#colors (one less than breaks
+mycols <- c(colorRampPalette(colors = c("red","white", "blue"))(length(bk)-1))
+heatmap(correlations,breaks=bk, col=mycols, scale="none")
+?heatmap
 ```
 
-Answer: **include answers**
+Answer: It shows that most of the correalations are indeed randomly distributed and there are only very few big correlations. 
+In thw lower left corner you can see a couple of more correalations, however it is very hard to see which columns are referred to. 
+Colors closer to red or blue would indicate higher correlations, so we would look at "bright" spots
 
 ## Que 1.4:
 
 **Is it a balanced problem (same number of elements in each class)? Are there any missing values in either train or test sets?**
 
 ```{r}
-<complete code>
+# count elements based on outcome training set
+nrow(subset(raw.training, cc == 1))
+nrow(subset(raw.training, cc == 0))
+
+nrow(subset(raw.test, cc == 1))
+nrow(subset(raw.test, cc == 0))
+
+sum(sapply(raw.training, function(x) sum(is.na(x))) != 0)
+sum(sapply(raw.test, function(x) sum(is.na(x))) != 0)
 ```
 
-Answer: **include answer**
+Answer: No Missing values. The cc classes are perfectly balanced. 350/350 train-set, 150/150 test-set
 
 # 2. Support vector machines
 
@@ -106,12 +129,26 @@ lsvm.fit_only2 <- svm(cc ~ p_141+p_66, data = raw.training, type = "C-classifica
 summary(lsvm.fit_only2)
 
 # performance/AUC
-<complete code>
-auc_forFun <- 
-confusiontable_forFun <- 
-accuracy_forFun <- 
-missclassification_forFun <- 
-confusionMatrix(confusiontable_forFun)
+preds = predict(lsvm.fit_only2, newdata=raw.test, probability = TRUE)
+pred_probs <- attr(preds, "probabilities")[,2] 
+roc <- roc(raw.test$cc, pred_probs)
+print(paste("AUC:", auc(roc)))
+ci <- ci.auc(raw.test$cc, pred_probs)
+print(paste("95% CI:", ci[1], ",", ci[3]))
+
+
+install.packages("caret")
+library(caret)
+
+confusion_table <- table(prediction=preds, actual=raw.test$cc)
+confustion_matric <- confusionMatrix(preds, raw.test$cc)                  
+accuracy_forFun <- 100*mean(preds==raw.test$cc)
+print(paste("The accuracy of the SVM classifier is = ", accuracy_forFun,"%"))
+
+missclassification_forFun <- 100*mean(preds!=raw.test$cc)
+print(paste("The missclassifications of the SVM classifier is = ", missclassification_forFun,"%"))
+# TODO likely false way and not what they wanted
+
 
 # Finally lets plot it
 plot(lsvm.fit_only2, raw.training, p_141~p_66)
@@ -127,7 +164,19 @@ plot(lsvm.fit_only2_radial, raw.training, p_141~p_66)
 plot(lsvm.fit_only2_sigmoid, raw.training, p_141~p_66)
 
 # And their AUC`s
-<complete code>
+get_auc <- function(model) {
+  preds = predict(model, newdata=raw.test, probability = TRUE)
+  pred_probs <- attr(preds, "probabilities")[,2] 
+  roc <- roc(raw.test$cc, pred_probs)
+  plot(roc)
+  auc <- auc(roc)
+  return(auc)
+}
+print(get_auc(lsvm.fit_only2_linear))
+print(get_auc(lsvm.fit_only2_poly))
+print(get_auc(lsvm.fit_only2_radial))
+print(get_auc(lsvm.fit_only2_sigmoid))
+
 ```
 We performed the steps above even though they are not part of the assignment to be able to have a better understanding of the SVM model and of the dataset we are working with (with visualization)...
 
@@ -141,50 +190,98 @@ lsvm.fit <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel =
 Check the `svm` API in the help to help you answer this. **What is the meaning of setting `probability = T`? What does change if you set it to false? And if you remove it, what is the default? ** Look at the documentation and also try setting it differently in your code and check what changes.
 
 ```{r}
-<complete code>
+?smv
 ```
 
-Answer: **include answer**
+Answer: The setting probability = T allows for probability predictions
 
 ## Que 2.2
 
 Inspect the resulting support vectors (number and type). Check the `svm` API in the help and think how you can achieve this. **What is the percentage of training data used for classification? Which support vector has the largest magnitude? Which has the smallest?**
 
 ```{r}
-<complete code>
+View(lsvm.fit$SV)
+sapply(lsvm.fit$SV, class)
+nrow(lsvm.fit$SV)
+ncol(lsvm.fit$SV)
 ```
 
-Answer: **include answer**
+Answer: there are 250 support Vecors with a length of 216. All vectors are numeric. 
+TODO  ?
 
 ## Que 2.3
 
 Predict the class of the test set and estimate the discriminative performances by computing the AUC. **What is the AUC? Is this bad, acceptable, good, ...? Optional: What is the 95% CI of the AUC? what does it mean?**
 
 ```{r}
-<complete code>
+preds <- predict(lsvm.fit, raw.test, probability = TRUE)
+pred_probs <- attr(preds, "probabilities")[,2] 
+roc <- roc(raw.test$cc, pred_probs)
+plot(roc, main="ROC AUC or the lsvm model")
+print(paste("AUC:", auc(roc)))
+ci <- ci.auc(raw.test$cc, pred_probs)
+print(paste("95% CI:", ci[1], ",", ci[3]))
+
 ```
 
-Answer: **include answer**
+Answer: The ROC is pretty high for the dataset with a AUC or ~0.89 and a confidence interval form ~0.86 to ~0.93. This means that the true AUC is between 0.86 and 0.93. Both are acceptably high values
 
 ## Que 2.4
 
 Repeat the exercise by varying the value of the parameter "cost" and generate a table of results with the value of cost and the corresponding number of support vectors, and AUC on the test data. Use at least these 3 costs: [0.1, 1, 10]  **What is the best value for the cost function in terms of AUC? How did the number of support vectors change with respect to changes in the cost?**
 
 ```{r}
-<complete code>
+
+create_cost_models <- function(costs){
+  for (i in costs){
+    model <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel = "linear", probability = T, cost=i)
+    preds <- predict(model, raw.test, probability = TRUE)
+    pred_probs <- attr(preds, "probabilities")[,2] 
+    roc <- roc(raw.test$cc, pred_probs)
+    auc <- auc(roc)
+    plot(roc, main=paste("ROC AUC or the lsvm model with cost", toString(i), "AUC: ", auc))
+    print(i)
+    print(ncol(model$SV))
+    print(nrow(model$SV))
+    print(paste("AUC:", auc(roc)))
+    ci <- ci.auc(raw.test$cc, pred_probs)
+    print(paste("95% CI:", ci[1], ",", ci[3]))
+  }
+}
+
+costs <- c(0.1, 0.5, 1, 5, 10)
+create_cost_models(costs)
+
 ```
 
-Answer: **include answer**
+Answer: with lower cost the number of graphs the number of vectors increases a bit. However in terms of the AUC and the number of vectors, numbers above 0.5 seem to provide diminishing returns.
 
 ## Que 2.5
 
 Try different kernel functions and assess the discriminative performances comparing the results with those obtained in the previous point. Try a radial, polynomial, and sigmoid kernel in addition to the linear you already tried before.**What is the best classification model on the test set? Optional: Was the second-best model(s) significantly worse than the first one(s) (did the 95% CI ranges of their AUCs overlap)?** Consider also the linear kernel.
 
 ```{r}
-<complete code>
+create_kernel_models <- function(kernels){
+  for (i in kernels){
+    print(paste("Kernel Model", i))
+    model <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel = i, probability = T, cost=1)
+    preds <- predict(model, raw.test, probability = TRUE)
+    pred_probs <- attr(preds, "probabilities")[,2] 
+    roc <- roc(raw.test$cc, pred_probs)
+    auc <- auc(roc)
+    plot(roc, main=paste("ROC AUC or the lsvm model with kernel", toString(i), "AUC: ", auc))
+    print(paste("columns: ", ncol(model$SV)))
+    print(paste("rows: ", nrow(model$SV)))
+    print(paste("AUC:", auc(roc)))
+    ci <- ci.auc(raw.test$cc, pred_probs)
+    print(paste("95% CI:", ci[1], ",", ci[3]))
+  }
+}
+kernels <- c("linear", "radial", "polynomial", "sigmoid")
+create_kernel_models(kernels)
 ```
 
-Answer: **include answer**
+Answer: In terms of AUCs all kernels performed better than the linear one. The sigmoid kernel performed the best with a mean auc of 0.92 and a ci from 0.894 to 0.959 compared to a mean of 0.893 and a ci of 0.856 to 0.929. The CIs overlap so it cannot be said they are significantly better, but the mans are quiet different. 
 
 # 3. Random Forests
 
