@@ -367,7 +367,8 @@ m_t_neg_c40_m <- nrow(subset(mitoses.thickness.test.pred.class, cl == 1 & pr <= 
 ```
 
 =\> Which model do you prefer in terms of calibration?
-=\> A: The mitoses model, seems to fit closer to the calibration curve ober all. It seems like the mitoses and thickness model is underpredicting in the lower probabilities a bit.
+=\> A: The mitoses model, seems to fit closer to the calibration curve ober all.
+It seems like the mitoses and thickness model is underpredicting in the lower probabilities a bit.
 
 =\> Suppose we want to implement your models in clinical practice.
 Someone suggests that when the predicted probabilityis equal or exceeds 30% then the subject is treated as if the patient has breast cancer and referred to additional work up (diagnostics and therapy).
@@ -377,8 +378,9 @@ Motivate your answer.
 =\> A: Using a cutoff-value of 30%, the mitoses and thickness model, 37 patients would be referred that had no breast cancer and 3 patients would be classified as benign, although they have breast cancer out f the total 205.
 In the mitoses model 8 would be referred with no breast cancer and 37 with breast cancer would not be referred.
 Regarding the change of cutoff-values there is no definitive answer.
-Changing the cutoff to 20% would not change the sensitivity. However increasing the cutoff to 40% the total number of wrong classifications would only be 9 type 2 and 11 type 1. 
-This means that we would trade a higher type 2 error for lower errors total making economic optimisation possible. 
+Changing the cutoff to 20% would not change the sensitivity.
+However increasing the cutoff to 40% the total number of wrong classifications would only be 9 type 2 and 11 type 1.
+This means that we would trade a higher type 2 error for lower errors total making economic optimisation possible.
 For a clinical model or a moral perspective however a lower type 2 error is more important thus, a lower threshold like 20% or 30% seems to be appropriate
 
 For the AUC and Brier score let's be more rigorous and calculate them using bootstrapping in order to use all data (without needing to split) and to also get CIs (confidence intervals) around their estimates.
