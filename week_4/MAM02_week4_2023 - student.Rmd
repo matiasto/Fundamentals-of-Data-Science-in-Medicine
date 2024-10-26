@@ -145,9 +145,12 @@ confustion_matric <- confusionMatrix(preds, raw.test$cc)
 accuracy_forFun <- 100*mean(preds==raw.test$cc)
 print(paste("The accuracy of the SVM classifier is = ", accuracy_forFun,"%"))
 
+# double check for percentage of wrongly clasisfied instances
 missclassification_forFun <- 100*mean(preds!=raw.test$cc)
 print(paste("The missclassifications of the SVM classifier is = ", missclassification_forFun,"%"))
-# TODO likely false way and not what they wanted
+
+# calculate the total n of missclassifications
+n_missclassifications <- sum(preds!=raw.test$cc)
 
 
 # Finally lets plot it
@@ -172,6 +175,8 @@ get_auc <- function(model) {
   auc <- auc(roc)
   return(auc)
 }
+
+
 print(get_auc(lsvm.fit_only2_linear))
 print(get_auc(lsvm.fit_only2_poly))
 print(get_auc(lsvm.fit_only2_radial))
@@ -199,15 +204,40 @@ Answer: The setting probability = T allows for probability predictions
 
 Inspect the resulting support vectors (number and type). Check the `svm` API in the help and think how you can achieve this. **What is the percentage of training data used for classification? Which support vector has the largest magnitude? Which has the smallest?**
 
-```{r}
-View(lsvm.fit$SV)
-sapply(lsvm.fit$SV, class)
+```{r height=10}
+# View(lsvm.fit$SV)
+# sapply(lsvm.fit$SV, class)
+# get number of vecotrs
+n_vectors = lsvm.fit$tot.nSV
 nrow(lsvm.fit$SV)
 ncol(lsvm.fit$SV)
+
+# Calculate percentage of support vectors used
+percentage_support_vectors <- (n_vectors / nrow(raw.training)) * 100
+cat("Percentage of training data used as support vectors:", percentage_support_vectors, "%\n")
+
+# Calculate the magnitudes of each support vector (square and sqrt to make it positive)
+support_vector_magnitudes <- apply(lsvm.fit$SV, 1, function(x) sqrt(sum(x^2)))
+# id of max vector
+id_max <- which.max(support_vector_magnitudes)
+max_vector <- lsvm.fit$SV[id_max,]
+
+
+cat("Largest magnitude of support vector:", max(support_vector_magnitudes), "id: ", id_max, "\n")
+print("Support vector with the smallest magnitude:")
+print(max_vector)
+
+# same for minimal vector
+id_min <- which.min(support_vector_magnitudes)
+min_vector <- lsvm.fit$SV[id_min,]
+
+cat("Smallest magnitude of support vector:", min(support_vector_magnitudes), "id ", id_min, "\n")
+print("Support vector with the largest magnitude:")
+print(min_vector)
+
 ```
 
-Answer: there are 250 support Vecors with a length of 216. All vectors are numeric. 
-TODO  ?
+Answer: there are 216 support Vecors with a length of 250. All vectors are numeric. The percentage of support vectors used is ~ 31%. For smallest and biggest magnitute see output.
 
 ## Que 2.3
 
@@ -224,7 +254,7 @@ print(paste("95% CI:", ci[1], ",", ci[3]))
 
 ```
 
-Answer: The ROC is pretty high for the dataset with a AUC or ~0.89 and a confidence interval form ~0.86 to ~0.93. This means that the true AUC is between 0.86 and 0.93. Both are acceptably high values
+Answer: The ROC is pretty high for the dataset with a AUC or ~0.89 and a confidence interval form ~0.86 to ~0.93. This means that the true AUC is between 0.86 and 0.93. The smallest as well as the highest value are considered good to very good.
 
 ## Que 2.4
 
