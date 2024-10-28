@@ -34,9 +34,10 @@ raw.test$cc <- as.factor(raw.test$cc)
 
 ```{r}
 ncol(raw.training)
+nrow(raw.training)
 ```
 
-Answer: *A: 251
+Answer: *A: 251 columns, 700 rows 
 
 ## Que 1.2: 
 
@@ -428,7 +429,6 @@ make_n_trees <- function(treecount){
 treecounts <- c(50, 100, 500, 1000, 2500)
 make_n_trees(treecounts)
 
-# TODO maybe pick out specific sample, adjust the cuttoff value
 ```
 
 Answer: n=1000 semmes to provide better in terms of AUC score auc ~0.926. n = 500 already provides a solid score with an auc ~0.924. n = 2500 performs worse again. However these difference are only marginally for n > 500 and computing cost / time is increasing significantly. Therefore n = 500 semms to be the sweet spot.
