@@ -1,0 +1,162 @@
+---
+title: "MAM03 assignment week 1"
+output: html_notebook 
+---
+
+
+Setup:
+
+# Libraries
+
+```{r}
+# install.packages("e1071")
+library(dplyr)
+
+```
+# Load-data 
+And clean up a little
+```{r}
+
+data <- read.csv("costefficacydata.csv")
+# remove unecessairy duplicates of the patient number 
+data <- data %>% select(-one_of('X', 'X.1')) 
+
+set.seed(42)
+```
+# Variable description
+
+| variable | column | description | 
+| --- |--- | --- |
+| patnr | 1 |  patient number |
+| trt | 2 |  number of the treatment (1 or 2) |
+| event | 3 | patient is alive (1) or not (0) |  after 3 years of follow-up |
+| costs | 4 |  all health care costs incurred by the patient |
+
+# Descriptives
+```{r}
+# treatment one
+tr_1 <- subset(data, trt == 1)
+hist(tr_1$cost, main="Cost Histogram of Treatment 1")
+n_ev_tr1 <- nrow(subset(tr_1, event == 1))
+print(paste("Deaths treatment 1 =", toString(n_ev_tr1)))
+n_tr_1 <- nrow(tr_1)
+print(paste("N treatment 1 =", toString(n_tr_1)))
+
+# treatment two
+tr_2 <- subset(data, trt == 2)
+hist(tr_2$cost, main="Cost Histogram of Treatment 2")
+n_ev_tr2 <- nrow(subset(tr_2, event == 1))
+n_tr_2 <- nrow(tr_2)
+print(paste("Deaths treatment 2 =", toString(n_ev_tr2)))
+print(paste("N treatment 2 =", toString(n_tr_2)))
+
+```
+
+## A1. Calculate the event-proportions (p1 and p2) and the mean costs (m1 and m2) in both treatment groups.
+
+
+```{r}
+# means
+m1 <- mean(tr_1$costs)
+m2 <- mean(tr_2$costs)
+
+print(paste("Mean treatement 1 =", round(m1, 2)))
+print(paste("Mean treatement 2 =", round(m2, 2)))
+
+
+# proportions
+p1 <- n_ev_tr1 / n_tr_1
+p2 <- n_ev_tr2 / n_tr_2
+
+print(paste("Proportion of death for treatement 1 =", round(p1, 3)))
+print(paste("Proportion of death for treatement 2 =", round(p2, 3)))
+
+```
+
+## A2: Calculate the ICER as (m1-m2)/(p1-p2).
+
+```{r}
+ICER <- ((m1-m2)/(p1-p2))
+print(ICER)
+```
+
+## A3: Use a bootstrap procedure to obtain a 95% confidence interval of the ICER. Check the interval is biased and, if so, use a bias-correction method.
+
+```{r}
+
+# computer ICER with proportional bootstrap samples of both event
+get_ICER_proportional <- function() {
+  # get samples form both datasets
+  index_tr1 <- sample(1:nrow(tr_1), replace=T)
+  bootsmpl_tr1 <- tr_1[index_tr1,]
+  
+  index_tr2 <- sample(1:nrow(tr_2), replace=T)
+  bootsmpl_tr2 <- tr_2[index_tr2,]
+  
+  # compute means
+  m1 <- mean(bootsmpl_tr1$costs)
+  m2 <- mean(bootsmpl_tr2$costs)
+  
+  # we can use the previously computed ns
+  p1 <- n_ev_tr1 / n_tr_1
+  p2 <- n_ev_tr2 / n_tr_2
+  
+  ICER <- ((m1-m2)/(p1-p2))
+  return(ICER)
+}
+
+# computer ICER with bootstrap samples of thw whole data
+get_ICER <- function() {
+  # get sample form the whole dataset
+  index <- sample(1:nrow(data), replace=T)
+  bootsmpl <- data[index,]
+  
+  # get subsets 
+  tr_1 <- subset(bootsmpl, trt == 1)
+  tr_2 <- subset(bootsmpl, trt == 2)
+  
+  # get total ns
+  n_tr_1 <- nrow(tr_1)
+  n_tr_2 <- nrow(tr_2)
+  
+  # ns treatment
+  n_ev_tr1 <- nrow(subset(tr_1, event == 1))
+  n_ev_tr2 <- nrow(subset(tr_2, event == 1))
+  
+  
+  # compute means with subset
+  m1 <- mean(tr_1$costs)
+  m2 <- mean(tr_2$costs)
+  
+  # compute proportions
+  p1 <- n_ev_tr1 / n_tr_1
+  p2 <- n_ev_tr2 / n_tr_2
+  
+  ICER <- ((m1-m2)/(p1-p2))
+  return(ICER)
+}
+
+ICERs <- vector(mode="integer", length=0)
+ICERs_prop <- vector(mode="integer", length=0)
+# repeat 1000 times
+for (i in 1:1000) {
+  ICERs_prop[i] <- get_ICER_proportional()
+  ICERs[i] <- get_ICER()
+}
+
+# means and CI for ICERs
+mean_ICERs <- mean(ICERs)
+CI_ICERs <- quantile(ICERs, probs=c(0.025, 0.975))
+print(paste("The mean of the ICERS for the bootstrapping of the whole dataset is", round(mean_ICERs, 2), "With the confidence interval", round(CI_ICERs[1], 2), "to", round(CI_ICERs[2], 2)))
+
+mean_ICERs_prop <- mean(ICERs_prop)
+CI_ICERs_prop <- quantile(ICERs_prop, probs=c(0.025, 0.975))
+print(paste("The mean of the ICERS for the bootstrapping of the whole proportional treatment subsets is", round(mean_ICERs_prop, 2), "With the confidence interval", round(CI_ICERs_prop[1], 2), "to", round(CI_ICERs_prop[2], 2)))
+
+
+```
+We decided to move on with the proportional bootstrap
+
+## A4: Also plot the bootstrap-estimates of (m1-m2) versus (p1-p2) and count how many points are in the first, second, third and fourth quadrants.
+
+hist(CI_ICERs_prop, ")
