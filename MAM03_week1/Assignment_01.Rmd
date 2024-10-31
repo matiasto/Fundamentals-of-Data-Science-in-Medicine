@@ -21,7 +21,7 @@ data <- read.csv("costefficacydata.csv")
 # remove unecessairy duplicates of the patient number 
 data <- data %>% select(-one_of('X', 'X.1')) 
 
-set.seed(42)
+set.seed(4242)
 ```
 # Variable description
 
@@ -34,6 +34,7 @@ set.seed(42)
 
 # Descriptives
 ```{r}
+
 # treatment one
 tr_1 <- subset(data, trt == 1)
 hist(tr_1$cost, main="Cost Histogram of Treatment 1")
@@ -80,7 +81,7 @@ ICER <- ((m1-m2)/(p1-p2))
 print(ICER)
 ```
 
-## A3: Use a bootstrap procedure to obtain a 95% confidence interval of the ICER. Check the interval is biased and, if so, use a bias-correction method.
+## A3: Use a bootstrap procedure to obtain a 95% confidence interval of the ICER. Check if the interval is biased and, if so, use a bias-correction method
 
 ```{r}
 
@@ -93,16 +94,24 @@ get_ICER_proportional <- function() {
   index_tr2 <- sample(1:nrow(tr_2), replace=T)
   bootsmpl_tr2 <- tr_2[index_tr2,]
   
+  # get n events
+  n_ev_tr1_boot <- nrow(subset(bootsmpl_tr1, event == 1))
+  n_ev_tr2_boot <- nrow(subset(bootsmpl_tr2, event == 1))
+  
+  # redundeant but whatever
+  n_tr_1_boot <- nrow(bootsmpl_tr1)
+  n_tr_2_boot <- nrow(bootsmpl_tr2)
+  
   # compute means
-  m1 <- mean(bootsmpl_tr1$costs)
-  m2 <- mean(bootsmpl_tr2$costs)
+  m1_boot <- mean(bootsmpl_tr1$costs)
+  m2_boot <- mean(bootsmpl_tr2$costs)
   
   # we can use the previously computed ns
-  p1 <- n_ev_tr1 / n_tr_1
-  p2 <- n_ev_tr2 / n_tr_2
+  p1_boot <- n_ev_tr1_boot / n_tr_1_boot
+  p2_boot <- n_ev_tr2_boot / n_tr_2_boot
   
-  ICER <- ((m1-m2)/(p1-p2))
-  return(ICER)
+  ICER_b <- ((m1_boot-m2_boot)/(p1_boot-p2_boot))
+  return(c(ICER_b, m1_boot, m2_boot, p1_boot, p2_boot))
 }
 
 # computer ICER with bootstrap samples of thw whole data
@@ -112,37 +121,61 @@ get_ICER <- function() {
   bootsmpl <- data[index,]
   
   # get subsets 
-  tr_1 <- subset(bootsmpl, trt == 1)
-  tr_2 <- subset(bootsmpl, trt == 2)
+  tr_1_b <- subset(bootsmpl, trt == 1)
+  tr_2_b <- subset(bootsmpl, trt == 2)
   
   # get total ns
-  n_tr_1 <- nrow(tr_1)
-  n_tr_2 <- nrow(tr_2)
+  n_tr_1_b <- nrow(tr_1_b)
+  n_tr_2_b <- nrow(tr_2_b)
   
   # ns treatment
-  n_ev_tr1 <- nrow(subset(tr_1, event == 1))
-  n_ev_tr2 <- nrow(subset(tr_2, event == 1))
+  n_ev_tr1 <- nrow(subset(tr_1_b, event == 1))
+  n_ev_tr2 <- nrow(subset(tr_2_b, event == 1))
   
   
   # compute means with subset
-  m1 <- mean(tr_1$costs)
-  m2 <- mean(tr_2$costs)
+  m1_norm <- mean(tr_1_b$costs)
+  m2_norm <- mean(tr_2_b$costs)
   
   # compute proportions
-  p1 <- n_ev_tr1 / n_tr_1
-  p2 <- n_ev_tr2 / n_tr_2
+  p1_norm <- n_ev_tr1 / n_tr_1_b
+  p2_norm <- n_ev_tr2 / n_tr_2_b
   
-  ICER <- ((m1-m2)/(p1-p2))
-  return(ICER)
+  ICER_norm <- ((m1_norm-m2_norm)/(p1_norm-p2_norm))
+  return(c(ICER_norm, m1_norm, m2_norm, p1_norm, p2_norm))
 }
 
+# collect the ICRS
 ICERs <- vector(mode="integer", length=0)
 ICERs_prop <- vector(mode="integer", length=0)
+
+# Collect the ms, we only do this for the proportional bootstrap since it has better results
+boots_m1 <- vector(mode="integer", length=0)
+boots_m2 <- vector(mode="integer", length=0)
+
+boots_p1 <- vector(mode="integer", length=0)
+boots_p2 <- vector(mode="integer", length=0)
+
 # repeat 1000 times
 for (i in 1:1000) {
-  ICERs_prop[i] <- get_ICER_proportional()
-  ICERs[i] <- get_ICER()
+  results_prop <- get_ICER_proportional()
+  ICERs_prop[i] <- results_prop[1]
+  
+  results <- get_ICER()
+  ICERs[i] <- results[1]
+  
+  boots_m1[i] <- results_prop[2]
+  boots_m2[i] <- results_prop[3]
+  boots_p1[i] <- results_prop[4]
+  boots_p2[i] <- results_prop[5]
 }
+
+# remove negative values (there were 5) and do log transformation
+ICERs <- ICERs[ICERs >= 0]
+ICERs <- log(ICERs, base=exp(1))
+
+ICERs_prop <- ICERs_prop[ICERs_prop >= 0]
+ICERs_prop <- log(ICERs_prop, base = exp(1))
 
 # means and CI for ICERs
 mean_ICERs <- mean(ICERs)
@@ -153,10 +186,370 @@ mean_ICERs_prop <- mean(ICERs_prop)
 CI_ICERs_prop <- quantile(ICERs_prop, probs=c(0.025, 0.975))
 print(paste("The mean of the ICERS for the bootstrapping of the whole proportional treatment subsets is", round(mean_ICERs_prop, 2), "With the confidence interval", round(CI_ICERs_prop[1], 2), "to", round(CI_ICERs_prop[2], 2)))
 
+hist(ICERs, breaks=20, main="ICERs")
+hist(ICERs_prop, breaks=20, main="ICERs_prop")
+
 
 ```
 We decided to move on with the proportional bootstrap
 
 ## A4: Also plot the bootstrap-estimates of (m1-m2) versus (p1-p2) and count how many points are in the first, second, third and fourth quadrants.
 
-hist(CI_ICERs_prop, ")
+A: No points outside the first quadrant 
+
+``` {r}
+m1_m2 <- boots_m1-boots_m2
+p1_p2 <- boots_p1-boots_p2
+
+# histograms
+hist(m1_m2, main="bootstrap-estimates m1-m2")
+hist(p1_p2, main="bootstrap-estimates p1-p2")
+hist(boots_p1, main="p1")
+hist(boots_p2, main="p2")
+# scatterplots
+plot(m1_m2, p1_p2, type = "p", main="Scatter plot of m1-m2 vs p1-p2")
+
+# first quadrant == both values positive
+print(paste("The sum of values in the first quadrant: ", sum(m1_m2 >= 0 & p1_p2 >= 0)))
+print(paste("The sum of values in the second quadrant: ", sum(m1_m2 >= 0 & p1_p2 < 0)))
+print(paste("The sum of values in the third quadrant: ", sum(m1_m2 < 0 & p1_p2 < 0)))
+print(paste("The sum of values in the fourth quadrant: ", sum(m1_m2 < 0 & p1_p2 >= 0)))
+
+# double check
+print(paste("Sum of means < 0:", sum(m1_m2 < 0)))
+print(paste("Sum of proportions < 0:", sum(p1_p2 < 0)))
+
+```
+
+## A5:	Fit parametric distributions to the costs-data in the 2 treatment groups; consider at least the normal, logistic, weibull, gamma and lognormal distributions. Check their fit by visually inspecting qqplots.
+
+
+```{r}
+
+library(ggplot2)#
+
+############## Normal Distribution ###############
+mean_tr_1 <- mean(tr_1$costs)
+sd_tr_1 <- sd(tr_1$costs)
+
+mean_tr_2 <- mean(tr_2$costs)
+sd_tr_2<- sd(tr_2$costs)
+
+dist_costs_tr_1 <- rnorm(203, mean= mean_tr_1, sd = sd_tr_1)
+dist_costs_tr_2 <- rnorm(206, mean= mean_tr_2, sd = sd_tr_2)
+
+# qqplot 
+qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Normal tr_1")
+qqplot(tr_2$costs, dist_costs_tr_2, main="QQ Plot Normal tr_2")
+
+# Plot tr_1
+ggplot(tr_1, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "lightblue", color = "black") +
+  stat_function(fun = dnorm, args = list(mean = mean_tr_1, sd = sd_tr_1), color = "blue", size = 1) +
+  labs(title = "Cost Tr_1 Distribution with Fitted Normal Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+# Plot tr_2
+ggplot(tr_2, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "green", color = "black") +
+  stat_function(fun = dnorm, args = list(mean = mean_tr_2, sd = sd_tr_2), color = "red", size = 1) +
+  labs(title = "Cost Tr_2 Distribution with Fitted Normal Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+######### Lognormal distribution #############
+# transform log
+log_cost_tr_1 <- log(tr_1$cost)
+log_cost_tr_2 <- log(tr_2$cost)
+
+# SCalculate mean and standard deviation of the logged data
+mean_log_cost_tr_1 <- mean(log_cost_tr_1, na.rm = TRUE)
+sd_log_cost_tr_1 <- sd(log_cost_tr_1, na.rm = TRUE)
+
+mean_log_cost_tr2 <- mean(log_cost_tr_2, na.rm = TRUE)
+sd_log_cost_tr_2 <- sd(log_cost_tr_2, na.rm = TRUE)
+
+dist_costs_tr_1 <- rlnorm(203, meanlog= mean_log_cost_tr_1, sdlog= sd_log_cost_tr_1)
+dist_costs_tr_2 <- rlnorm(206, meanlog= mean_log_cost_tr2, sdlog= sd_log_cost_tr_2)
+
+# qqplot 
+qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Lognormal tr_1")
+qqplot(tr_2$costs, dist_costs_tr_2, main="QQ Plot Lognormal tr_2")
+
+# Step 3: Create ggplot with histogram and fitted lognormal distribution curve
+ggplot(tr_1, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "lightblue", color = "black") +
+  stat_function(fun = dlnorm, args = list(meanlog = mean_log_cost_tr_1, sdlog = sd_log_cost_tr_1), color = "blue", size = 1) +
+  labs(title = "Cost Distribution tr_1 with Fitted Lognormal Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+ggplot(tr_2, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "green", color = "black") +
+  stat_function(fun = dlnorm, args = list(meanlog = mean_log_cost_tr2, sdlog = sd_log_cost_tr_2), color = "red", size = 1) +
+  labs(title = "Cost Distribution tr_2 with Fitted Lognormal Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+############# logistic #################
+mean_tr_1 <- mean(tr_1$costs)
+sd_tr_1 <- sd(tr_1$costs)
+
+mean_tr_2 <- mean(tr_2$costs)
+sd_tr_2<- sd(tr_2$costs)
+
+dist_costs_tr_1 <- rnorm(203, mean= mean_tr_1, sd = sd_tr_1)
+dist_costs_tr_2 <- rnorm(206, mean= mean_tr_2, sd = sd_tr_2)
+
+# qqplot 
+qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Logistic tr_1")
+qqplot(tr_2$costs, dist_costs_tr_2, main="QQ Plot Logistic tr_2")
+
+# Plot tr_1
+ggplot(tr_1, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "lightblue", color = "black") +
+  stat_function(fun = dlogis, args = list(location = mean_tr_1, scale = sd_tr_1), color = "blue", size = 1) +
+  labs(title = "Cost Tr_1 Distribution with Fitted Logistic Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+# Plot tr_2
+ggplot(tr_2, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "green", color = "black") +
+  stat_function(fun = dlogis, args = list(location = mean_tr_2, scale = sd_tr_2), color = "red", size = 1) +
+  labs(title = "Cost Tr_2 Distribution with Fitted Logistic Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+############ weibull distribution #################
+library(MASS)
+
+# Fit distribution
+weibull_fit_tr_1 <- fitdistr(tr_1$costs, densfun = "weibull")
+weibull_fit_tr_2 <- fitdistr(tr_2$costs, densfun = "weibull")
+
+# Extract the shape and scale parameters
+shape_tr_1 <- weibull_fit_tr_1$estimate["shape"]
+scale_tr_1 <- weibull_fit_tr_1$estimate["scale"]
+
+shape_tr_2 <- weibull_fit_tr_2$estimate["shape"]
+scale_tr_2 <- weibull_fit_tr_2$estimate["scale"]
+
+# sample
+dist_costs_tr_1 <- rweibull(203, shape= shape_tr_1, scale = scale_tr_1)
+dist_costs_tr_2 <- rweibull(206, shape= shape_tr_2, scale = scale_tr_2)
+
+# qqplot 
+qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Weibull tr_1")
+qqplot(tr_2$costs, dist_costs_tr_2, main="QQ Plot Weibull tr_2")
+
+
+# Plot tr_1
+ggplot(tr_1, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "lightblue", color = "black") +
+  stat_function(fun = dweibull, args = list(shape = shape_tr_1, scale = scale_tr_1), color = "blue", size = 1) +
+  labs(title = "Cost Tr_1 Distribution with Fitted Weibull Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+# Plot tr_2
+ggplot(tr_2, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "green", color = "black") +
+  stat_function(fun = dweibull, args = list(shape = shape_tr_2, scale = scale_tr_2), color = "red", size = 1) +
+  labs(title = "Cost Tr_2 Distribution with Fitted Weibull Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+############### gamma ##################
+
+# Using initial estimates based on data
+initial_shape_tr_1 <- mean(tr_1$costs) ^ 2 / var(tr_1$costs)
+initial_scale_tr_1 <- var(tr_1$costs) / mean(tr_1$costs)
+
+initial_shape_tr_2 <- mean(tr_2$costs) ^ 2 / var(tr_2$costs)
+initial_scale_tr_2 <- var(tr_2$costs) / mean(tr_2$costs)
+
+# Fit distribution
+gamma_fit_tr_1 <- fitdistr(tr_1$costs, densfun = "gamma", start = list(shape = initial_shape_tr_1, scale = initial_scale_tr_1))
+gamma_fit_tr_2 <- fitdistr(tr_2$costs, densfun = "gamma", start = list(shape = initial_shape_tr_2, scale = initial_scale_tr_2))
+
+# Extract the shape and scale parameters
+shape_tr_1 <- gamma_fit_tr_1$estimate["shape"]
+scale_tr_1 <- gamma_fit_tr_1$estimate["scale"]
+
+shape_tr_2 <- gamma_fit_tr_2$estimate["shape"]
+scale_tr_2 <- gamma_fit_tr_2$estimate["scale"]
+
+# get sample 
+dist_costs_tr_1 <- rgamma(203, shape=shape_tr_1 , scale= scale_tr_1)
+dist_costs_tr_2 <- rgamma(206, shape=shape_tr_2 , scale= scale_tr_2)
+
+# qqplot
+qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Gamma tr_1")
+qqplot(tr_2$costs, dist_costs_tr_2, main="QQ Plot Gammae tr_2")
+
+# Plot tr_1
+ggplot(tr_1, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "lightblue", color = "black") +
+  stat_function(fun = dgamma, args = list(shape = shape_tr_1, scale = scale_tr_1), color = "blue", size = 1) +
+  labs(title = "Cost Tr_1 Distribution with Fitted Gamma Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+# Plot tr_2
+ggplot(tr_2, aes(x = costs)) +
+  geom_histogram(aes(y = ..density..), bins = 20, fill = "green", color = "black") +
+  stat_function(fun = dgamma, args = list(shape = shape_tr_2, scale = scale_tr_2), color = "red", size = 1) +
+  labs(title = "Cost Tr_2 Distribution with Fitted Gamma Curve", x = "Cost", y = "Density") +
+  theme_minimal()
+
+# TODO do the qqplot wiht qqcomp and fitdist (like sophie and micha)
+
+```
+
+## A6.	Finally simulate 1000 times sampling 206 and 203 patients: i.e. (i) draw cost-data from the estimated distributions at step 5, (ii) draw events from binomial distributions with p1 and p2, and (iii) calculate ICERs for each simulation. Compare this sampling distribution with the bootstrap distribution of step 3.
+
+```{r}
+
+get_ICERs_from_distribution <- function(dist) {
+
+  if (dist=="normal") {
+    # get parameters for the distributions
+    mmean_tr_1 <- mean(tr_1$costs)
+    mmean_tr_2 <- mean(tr_2$costs)
+    
+    msd_tr_1 <- sd(tr_1$costs)
+    msd_tr_2 <- sd(tr_2$costs)
+    
+    m_p1_tr_1 <- nrow(subset(tr_1, event == 1)) / nrow(tr_1)
+    m_p1_tr_2 <- nrow(subset(tr_2, event == 1)) / nrow(tr_2)
+  } else if(dist=="gamma") {
+    # Using initial estimates based on data
+    initial_shape_tr_1_rd <- mean(tr_1$costs) ^ 2 / var(tr_1$costs)
+    initial_scale_tr_1_rd <- var(tr_1$costs) / mean(tr_1$costs)
+    
+    initial_shape_tr_2_rd <- mean(tr_2$costs) ^ 2 / var(tr_2$costs)
+    initial_scale_tr_2_rd <- var(tr_2$costs) / mean(tr_2$costs)
+    
+    # Fit distribution
+    gamma_fit_tr_1_rd <- fitdistr(tr_1$costs, densfun = "gamma", start = list(shape = initial_shape_tr_1_rd, scale = initial_scale_tr_1_rd))
+    gamma_fit_tr_2_rd <- fitdistr(tr_2$costs, densfun = "gamma", start = list(shape = initial_shape_tr_2_rd, scale = initial_scale_tr_2_rd))
+    
+    # Extract the shape and scale parameters
+    shape_tr_1_rd <- gamma_fit_tr_1_rd$estimate["shape"]
+    scale_tr_1_rd <- gamma_fit_tr_1_rd$estimate["scale"]
+    
+    shape_tr_2_rd <- gamma_fit_tr_2_rd$estimate["shape"]
+    scale_tr_2_rd <- gamma_fit_tr_2_rd$estimate["scale"]
+  } else if(dist=="weibull"){
+    
+    # Fit distribution
+    weibull_fit_tr_1_rd <- fitdistr(tr_1$costs, densfun = "weibull")
+    weibull_fit_tr_2_rd <- fitdistr(tr_2$costs, densfun = "weibull")
+    
+    # Extract the shape and scale parameters
+    shape_tr_1_rd <- weibull_fit_tr_1_rd$estimate["shape"]
+    scale_tr_1_rd <- weibull_fit_tr_1_rd$estimate["scale"]
+    
+    shape_tr_2_rd <- weibull_fit_tr_2_rd$estimate["shape"]
+    scale_tr_2_rd <- weibull_fit_tr_2_rd$estimate["scale"]
+    
+  } else if(dist=="lognormal") {
+    # transform log
+    log_cost_tr_1_rd <- log(tr_1$cost)
+    log_cost_tr_2_rd <- log(tr_2$cost)
+    
+    # Calculate mean and standard deviation of the logged data
+    mean_log_cost_tr_1_rd <- mean(log_cost_tr_1_rd, na.rm = TRUE)
+    sd_log_cost_tr_1_rd <- sd(log_cost_tr_1_rd, na.rm = TRUE)
+    
+    mean_log_cost_tr_2_rd <- mean(log_cost_tr_2_rd, na.rm = TRUE)
+    sd_log_cost_tr_2_rd <- sd(log_cost_tr_2_rd, na.rm = TRUE)
+    
+  } else if(dist=="logistic") {
+    mean_tr_1_rd <- mean(tr_1$costs)
+    sd_tr_1_rd <- sd(tr_1$costs)
+  
+    mean_tr_2_rd <- mean(tr_2$costs)
+    sd_tr_2_rd <- sd(tr_2$costs)
+  }
+  
+  # create vectors to aggregate data
+  # collect the ICRS
+  ICERs_rd <- vector(mode="integer", length=0)
+  
+  rd_m1 <- vector(mode="integer", length=0)
+  rd_m2 <- vector(mode="integer", length=0)
+  
+  rd_p1 <- vector(mode="integer", length=0)
+  rd_p2 <- vector(mode="integer", length=0)
+  
+  for (i in 1:1000) {
+    # draw the costs
+    if (dist=="normal") {
+      dist_costs_tr_1 <- rnorm(203, mean= mmean_tr_1, sd = msd_tr_1)
+      dist_costs_tr_2 <- rnorm(206, mean= mmean_tr_2, sd = msd_tr_2)
+    } else if (dist=="lognormal") {
+      dist_costs_tr_1 <- rlnorm(203, meanlog= mean_log_cost_tr_1_rd, sdlog= sd_log_cost_tr_1_rd)
+      dist_costs_tr_2 <- rlnorm(206, meanlog= mean_log_cost_tr_2_rd, sdlog= sd_log_cost_tr_2_rd)
+    } else if (dist=="gamma") {
+      dist_costs_tr_1 <- rgamma(203, shape=shape_tr_1_rd , scale= scale_tr_1_rd)
+      dist_costs_tr_2 <- rgamma(206, shape=shape_tr_2_rd , scale= scale_tr_2_rd)
+    } else if (dist=="logistic") {
+      dist_costs_tr_1 <- rnorm(203, mean= mean_tr_1_rd, sd = sd_tr_1_rd)
+      dist_costs_tr_2 <- rnorm(206, mean= mean_tr_2_rd, sd = sd_tr_2_rd)
+    } else if (dist=="weibull") {
+      dist_costs_tr_1 <- rweibull(203, shape= shape_tr_1_rd, scale = scale_tr_1_rd)
+      dist_costs_tr_2 <- rweibull(206, shape= shape_tr_2_rd, scale = scale_tr_2_rd)
+    }
+    # draw the events 
+    # TODO is the size appropriate?
+    dist_ev_tr1 <- rbinom(203, size=1, prob = m_p1_tr_1)
+    dist_ev_tr2 <- rbinom(206, size=1, prob = m_p1_tr_1)
+    
+    df_tr_1 <- data.frame(event = dist_ev_tr1, costs = dist_costs_tr_1)
+    df_tr_2 <- data.frame(event = dist_ev_tr2, costs = dist_costs_tr_2)
+    
+    # get n events
+    n_ev_tr1_rd <- nrow(subset(df_tr_1, event == 1))
+    n_ev_tr2_rd <- nrow(subset(df_tr_2, event == 1))
+    
+    # redundeant but whatever
+    n_tr_1_rd <- nrow(df_tr_1)
+    n_tr_2_rd <- nrow(df_tr_2)
+    
+    # compute means
+    m1_rd <- mean(df_tr_1$costs)
+    m2_rd <- mean(df_tr_2$costs)
+    
+    # save TODO maybe remove 
+    rd_m1[i] <- m1_rd
+    rd_m2[i] <- m2_rd
+    
+    # we can use the previously computed ns
+    p1_rd <- n_ev_tr1_rd / n_tr_1_rd
+    p2_rd <- n_ev_tr2_rd / n_tr_2_rd
+    
+    # save TODO maybe remove
+    rd_p1 <- p1_rd
+    rd_p2 <- p2_rd
+    
+    ICER_rd <- ((m1_rd-m2_rd)/(p1_rd-p2_rd))
+    
+    ICERs_rd[i] <- ICER_rd
+  }
+  
+  
+  # remove negative values (there were 5) and do log transformation
+  ICERs_rd <- ICERs_rd[ICERs_rd >= 0]
+  # logtransform
+  #ICERs_rd <- log(ICERs_rd, base=exp(1))
+  
+  
+  # means and CI for ICERs
+  mean_ICERs_rd <- mean(ICERs_rd)
+  CI_ICERs_rd <- quantile(ICERs_rd, probs=c(0.025, 0.975))
+  print(paste("The log of the mean of the ICERS for the ", dist, "distribution is", round(mean_ICERs_rd, 2), "With the confidence interval", round(CI_ICERs_rd[1], 2), "to", round(CI_ICERs_rd[2], 2)))
+  hist(ICERs_rd, breaks= 20, main=paste("Randomly generated ICERs based on ", dist, "distribution in log scale"))
+}
+
+# call for each distribution
+get_ICERs_from_distribution("normal")
+get_ICERs_from_distribution("weibull")
+get_ICERs_from_distribution("logistic")
+get_ICERs_from_distribution("lognormal")
+get_ICERs_from_distribution("gamma")
+```
+
