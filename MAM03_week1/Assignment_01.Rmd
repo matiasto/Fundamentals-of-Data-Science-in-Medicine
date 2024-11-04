@@ -238,6 +238,14 @@ sd_tr_2<- sd(tr_2$costs)
 dist_costs_tr_1 <- rnorm(203, mean= mean_tr_1, sd = sd_tr_1)
 dist_costs_tr_2 <- rnorm(206, mean= mean_tr_2, sd = sd_tr_2)
 
+norm_fit_tr_1 <- fitdist(tr_1$costs, "norm")
+norm_fit_tr_2 <- fitdist(tr_2$costs, "norm")
+
+
+
+
+
+
 # qqplot 
 qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Normal tr_1")
 qqplot(tr_2$costs, dist_costs_tr_2, main="QQ Plot Normal tr_2")
@@ -271,6 +279,9 @@ sd_log_cost_tr_2 <- sd(log_cost_tr_2, na.rm = TRUE)
 dist_costs_tr_1 <- rlnorm(203, meanlog= mean_log_cost_tr_1, sdlog= sd_log_cost_tr_1)
 dist_costs_tr_2 <- rlnorm(206, meanlog= mean_log_cost_tr2, sdlog= sd_log_cost_tr_2)
 
+lnorm_fit_tr_1 <- fitdist(tr_1$costs, "lnorm")
+lnorm_fit_tr_2 <- fitdist(tr_2$costs, "lnorm")
+
 # qqplot 
 qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Lognormal tr_1")
 qqplot(tr_2$costs, dist_costs_tr_2, main="QQ Plot Lognormal tr_2")
@@ -297,6 +308,10 @@ sd_tr_2<- sd(tr_2$costs)
 
 dist_costs_tr_1 <- rnorm(203, mean= mean_tr_1, sd = sd_tr_1)
 dist_costs_tr_2 <- rnorm(206, mean= mean_tr_2, sd = sd_tr_2)
+
+logis_fit_tr_1 <- fitdist(tr_1$costs, "logis")
+logis_fit_tr_2 <- fitdist(tr_2$costs, "logis")
+
 
 # qqplot 
 qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Logistic tr_1")
@@ -334,6 +349,9 @@ scale_tr_2 <- weibull_fit_tr_2$estimate["scale"]
 dist_costs_tr_1 <- rweibull(203, shape= shape_tr_1, scale = scale_tr_1)
 dist_costs_tr_2 <- rweibull(206, shape= shape_tr_2, scale = scale_tr_2)
 
+weibull_fit_tr_1 <- fitdist(tr_1$costs, "weibull")
+weibull_fit_tr_2 <- fitdist(tr_2$costs, "weibull")
+
 # qqplot 
 qqplot(tr_1$costs, dist_costs_tr_1, main="QQ Plot Weibull tr_1")
 qqplot(tr_2$costs, dist_costs_tr_2, main="QQ Plot Weibull tr_2")
@@ -363,15 +381,18 @@ initial_shape_tr_2 <- mean(tr_2$costs) ^ 2 / var(tr_2$costs)
 initial_scale_tr_2 <- var(tr_2$costs) / mean(tr_2$costs)
 
 # Fit distribution
-gamma_fit_tr_1 <- fitdistr(tr_1$costs, densfun = "gamma", start = list(shape = initial_shape_tr_1, scale = initial_scale_tr_1))
-gamma_fit_tr_2 <- fitdistr(tr_2$costs, densfun = "gamma", start = list(shape = initial_shape_tr_2, scale = initial_scale_tr_2))
+gama_fit_tr_1 <- fitdistr(tr_1$costs, densfun = "gamma", start = list(shape = initial_shape_tr_1, scale = initial_scale_tr_1))
+gama_fit_tr_2 <- fitdistr(tr_2$costs, densfun = "gamma", start = list(shape = initial_shape_tr_2, scale = initial_scale_tr_2))
+
+gamma_fit_tr_1 <- fitdist(tr_1$costs, "gamma", method = "mme")
+gamma_fit_tr_2 <- fitdist(tr_2$costs, "gamma", method = "mme")
 
 # Extract the shape and scale parameters
-shape_tr_1 <- gamma_fit_tr_1$estimate["shape"]
-scale_tr_1 <- gamma_fit_tr_1$estimate["scale"]
+shape_tr_1 <- gama_fit_tr_1$estimate["shape"]
+scale_tr_1 <- gama_fit_tr_1$estimate["scale"]
 
-shape_tr_2 <- gamma_fit_tr_2$estimate["shape"]
-scale_tr_2 <- gamma_fit_tr_2$estimate["scale"]
+shape_tr_2 <- gama_fit_tr_2$estimate["shape"]
+scale_tr_2 <- gama_fit_tr_2$estimate["scale"]
 
 # get sample 
 dist_costs_tr_1 <- rgamma(203, shape=shape_tr_1 , scale= scale_tr_1)
@@ -395,8 +416,16 @@ ggplot(tr_2, aes(x = costs)) +
   labs(title = "Cost Tr_2 Distribution with Fitted Gamma Curve", x = "Cost", y = "Density") +
   theme_minimal()
 
-# TODO do the qqplot wiht qqcomp and fitdist (like sophie and micha)
 
+
+# qqcomp(list(norm_fit_tr_1, weibull_fit_tr_1, lognormal_fit_tr_1, gamma_fit_tr_1, logistic_fit_tr_1), legendtext=c("Normal tr_1", "Weibull tr_1", "lognormal tr_1", "Gamma tr_1", "Logistic tr_1"))
+
+qqcomp(list(norm_fit_tr_1, logis_fit_tr_1, weibull_fit_tr_1, gamma_fit_tr_1, lnorm_fit_tr_1), 
+       legendtext = c("Normal", "Logistic", "Weibull", "Gamma", "Lognormal"),
+       main = "Q-Q Plot for Group 1 Costs", xlim = c(0, max(tr_1$costs) * 1.1))
+qqcomp(list(norm_fit_tr_2, logis_fit_tr_2, weibull_fit_tr_2, gamma_fit_tr_2, lnorm_fit_tr_2), 
+       legendtext = c("Normal", "Logistic", "Weibull", "Gamma", "Lognormal"),
+       main = "Q-Q Plot for Group 2 Costs")
 ```
 
 ## A6.	Finally simulate 1000 times sampling 206 and 203 patients: i.e. (i) draw cost-data from the estimated distributions at step 5, (ii) draw events from binomial distributions with p1 and p2, and (iii) calculate ICERs for each simulation. Compare this sampling distribution with the bootstrap distribution of step 3.
@@ -495,9 +524,9 @@ get_ICERs_from_distribution <- function(dist) {
       dist_costs_tr_2 <- rweibull(206, shape= shape_tr_2_rd, scale = scale_tr_2_rd)
     }
     # draw the events 
-    # TODO is the size appropriate?
-    dist_ev_tr1 <- rbinom(203, size=1, prob = m_p1_tr_1)
-    dist_ev_tr2 <- rbinom(206, size=1, prob = m_p1_tr_1)
+
+    dist_ev_tr1 <- rbinom(203, size=1, prob = p1)
+    dist_ev_tr2 <- rbinom(206, size=1, prob = p2)
     
     df_tr_1 <- data.frame(event = dist_ev_tr1, costs = dist_costs_tr_1)
     df_tr_2 <- data.frame(event = dist_ev_tr2, costs = dist_costs_tr_2)
@@ -535,14 +564,14 @@ get_ICERs_from_distribution <- function(dist) {
   # remove negative values (there were 5) and do log transformation
   ICERs_rd <- ICERs_rd[ICERs_rd >= 0]
   # logtransform
-  #ICERs_rd <- log(ICERs_rd, base=exp(1))
+  ICERs_rd <- log(ICERs_rd, base=exp(1))
   
   
   # means and CI for ICERs
   mean_ICERs_rd <- mean(ICERs_rd)
   CI_ICERs_rd <- quantile(ICERs_rd, probs=c(0.025, 0.975))
   print(paste("The log of the mean of the ICERS for the ", dist, "distribution is", round(mean_ICERs_rd, 2), "With the confidence interval", round(CI_ICERs_rd[1], 2), "to", round(CI_ICERs_rd[2], 2)))
-  hist(ICERs_rd, breaks= 20, main=paste("Randomly generated ICERs based on ", dist, "distribution in log scale"))
+  hist(ICERs_rd, breaks= 20, main=paste("Randomly generated ICERs based on ", toString(dist), "distribution in log scale"))
 }
 
 # call for each distribution
