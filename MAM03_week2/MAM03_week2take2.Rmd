@@ -1,0 +1,236 @@
+---
+title: "Survival Analysis"
+author: "Robin Manz, Matias Tolppanen"
+date: "2024-11-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyr)
+library(ggplot2)
+library(survival)
+library(splines)
+```
+
+## R Markdown
+
+## Renal transplantation and risk of graft failure
+
+outcome:
+gstatus         = graft-rejection (=1) or not (=0)
+gsurv           = number of months the patient was followed until rejection or censoring
+pstatus         = patient-status at end of follow-up (1=died, 0=alive)
+psurv           = number of months the patient was followed until death or censoring
+
+covariates/risk factors:
+acclft          = age of the patient at transplantation (years)
+dgf             = delayed graft function (dgf or 0=no dgf)
+aantalre        = number of acute rejection-treatments during the first 6 months post-transplantation (0, 1, 2 or 3)
+creat           = serum creatinine at six-weeks post-transplantation (mumol/L) (marker of kidney-function)
+predias         = diastolic bloodpressure pre-transplantation
+prac            = panel reactive antibodies (marker of inflammation)
+uprotein        = protein in urine at six-weeks post-transplantation  (geen,  sp/+,  >+) (marker of kidney function)
+cregsh          = number of cross-reactive groups (public HLA epitopes) of the major histocompatibility complex class I shared between donor and recipient
+
+c("aantalre" , "acclft" , "dgf" ,"creat", "predias", "prac", "uprotein", "cregsh")]
+```{r}
+# Loading data
+# Load dataset
+load(file="renaltx.Rdata")
+
+# show the data available, the data we are looking for is in d
+ls()
+
+# remove missing values
+d <- d %>% drop_na()
+```
+
+## Kaplan Meier curve
+
+```{r} 
+# user the Surv() mehtod to extract the sourvival proportion
+Y <- Surv(time = d$gsurv, event = d$gstatus == 1)
+summary(Y)
+
+# plot the Surv time
+plot(Y, lty = c("solid", "dashed", "dashed"), col = c("black", "grey", "grey"), xlab = "Survival Time In Days", ylab = "Graft rejection probabilities for all patients", main="Kaplan-Meier Curve")
+```
+## Univariate Analyiss: Check for linearity using splines
+If min(AIC(ns(df>1)))< (AIC(ns(df=1))) linearity is violated and will be fixed by using ns with df == x
+
+```{r}
+
+plot_splines <- function(covariate) {
+  print(paste("############", covariate, "##########"))
+  psplinespvals <- c()
+  aic=c()
+  i <- 1
+  # acclft
+  # test out 1 to 12 degrees of freedom
+  for (j in 1:10) {
+    # compute the AIC of the cox-model with i defrees of freedom for the approach
+    formula <- as.formula(paste("Surv(gsurv, gstatus) ~ ns(", covariate, ", df=", toString(j), ")"))
+    aic[j] = AIC(coxph(formula, data=d))
+  }
+  
+  # plot the aics for the splines, the lowest AIC is the best fit
+  plot(aic, type="b", main=covariate, xlab="natural spline penalty (df)")
+  # get the best pspline value 
+  formula <- as.formula(paste("Surv(gsurv, gstatus) ~ pspline(", covariate, ", data=d)"))
+  qq=summary(coxph(formula, data=d))
+  psplinespvals[i] = qq$coefficients[2,6] # ? 
+  # add a text with the positions at x and y (you can decipher that on your own (: )
+  text(x=1, y=min(aic,na.rm=T)+(max(aic,na.rm=T)-min(aic,na.rm=T))/2, 
+  paste("pspline nonlin p = ", round(psplinespvals[i],4)), adj=0, col=4, cex=0.9)
+  
+  # get the minimum AIC
+  best_df = which.min(aic)
+  # Test linearity by comparing AIcs
+  # Linear model
+  formula <- as.formula(paste("Surv(gsurv, gstatus) ~ ", covariate))
+  linear_model <- coxph(formula, data = d)
+  aic_linear <- AIC(linear_model)
+  
+  # Spline model with 3 degrees of freedom (adjust as needed)
+  formula <- as.formula(paste("Surv(gsurv, gstatus) ~ ns(", covariate, ", df= ", toString(best_df), ")"))
+  spline_model <- coxph(formula, data = d)
+  aic_spline <- AIC(spline_model)
+  
+  # Compare AICs
+  print(paste("AIC (Linear):", round(aic_linear, 2)))
+  print(paste("AIC (Spline):", round(aic_spline, 2)))
+  
+  # Likelihood Ratio Test
+  lrt <- anova(linear_model, spline_model, test = "Chisq")
+  print(lrt)
+  
+  # Visual inspection
+  # plot(spline_model)
+  
+  # check for proportionality
+  cox_l=cox.zph(linear_model)
+  plot(cox_l)
+  # print(summary(linear_model))
+  print("cox_zph linear")
+  print(cox_l)
+  
+  cox_s=cox.zph(spline_model)
+  plot(cox_s)
+  # print(summary(spline_model))
+  print("compare the p-value for proportionality")
+  print("cox_zph linear")
+  print(cox_l)
+  print("cox_zph splines")
+  print(cox_s)
+}
+covs_continu <- c("aantalre" , "acclft" ,"creat", "predias", "prac", "cregsh")
+
+for(x in covs_continu) {
+  plot_splines(x)
+}
+```
+
+Result: acclft violates the linearity and therefore we use ns(acclft, df=4) based on the charts, this result is significant when comparing it to a linear model
+
+From this point on we assume all variables are linearly related and we use ns(acclft, df=4) for acclft as a fix. 
+
+
+Proportionality is violated for acclft (p=0.00014) and aantalre (0.0036)
+## Fix proportionality for acclft and aantalre with landmarking
+We apply landmarking to the time-axis for our model (gsurv)
+
+```{r}
+library(survival)
+
+perform_landmarking <- function(covariate) {
+  formula <- as.formula(paste("Surv(gsurv, gstatus) ~", covariate))
+  # compute landmarks (we chose 5 intervals
+  landmarks <- seq(min(d$gsurv), max(d$gsurv), length.out=3)
+  #landmarks <- c(0, 30, 60, 90, 120, 150, 180)
+  print(landmarks)
+  # do the survival time split
+  dx = survSplit(formula, d, cut=landmarks, episode ="timegrp", start="tstart", end="tstop")
+  # exact the same results as the analysis with the original dataset in d1
+  View(dx)
+  print("#### Normal model ######")
+  cox_n <- coxph(Surv(gsurv, gstatus) ~ ns(acclft, 4), data = d)
+  summary(cox_n)
+  print(AIC(cox_n))
+  cox_n_szph=cox.zph(cox_n)
+  print(cox_n_szph)
+  
+  print("###### ladmark model
+    ########")
+  if (covariate == "acclft") {
+    formula <- as.formula("Surv(tstart, tstop, gstatus) ~ ns(acclft, 4)")
+  } else {
+    formula <- as.formula(paste("Surv(tstart, tstop, gstatus) ~", covariate))
+  }
+  cox_land <- coxph(formula, data= dx)
+  summary(cox_land)
+  print(cox_land)
+  cox_land_szph=cox.zph(cox_land)
+  print(cox_land_szph)
+  
+  print("######## landmarkmodel with time-intervals #######")
+  # let the effect of creatinine vary with the time-intervals
+  if (covariate == "acclft") {
+    f <- as.formula("Surv(tstart, tstop, gstatus) ~ ns(acclft, 4) * strata(timegrp) ")
+  } else {
+    f <- as.formula(paste("Surv(tstart, tstop, gstatus) ~", covariate, "* strata(timegrp) "))
+  }
+
+  int_cox <- coxph(f , data= dx)
+  print(summary(int_cox))
+  print(AIC(int_cox))
+  # TODO fix too small number bug
+  cox_int_szph=cox.zph(int_cox)
+  print(cox_int_szph)
+  
+  validate(int_cox, method="boot", B=100) 
+
+}
+
+c <- c("aantalre", "acclft")
+for (x in c) {
+  perform_landmarking(x)
+}
+
+# effect of creatinine varies with time, effect of sex not ..
+#summary(coxph(Surv(tstart, tstop, gstaus) ~ geslacht + 
+      #creatinine * strata(timegrp), data= d1x))
+
+
+```
+## Multivariate Regression 
+
+```{r}
+plot_slines_multi <- function (cov) {
+  coxes <- coxph(Surv(gsurv,gstatus) ~ aantalre + acclft + dgf + creat + predias + prac + uprotein + cregsh, data = d)
+  
+  coxesa=cox.zph(coxes)
+  par(mfrow=c(2,2))
+  plot(coxesa[1])
+  plot(coxesa[2])
+  plot(coxesa[3])
+  plot(coxesa[4])
+  plot(coxesa[5])
+  plot(coxesa[6])
+  plot(coxesa[7])
+  plot(coxesa[8])
+  par(mfrow=c(1,1))
+  coxesa
+}
+
+
+covs_continu <- c("aantalre" , "acclft" ,"creat", "predias", "prac", "cregsh")
+
+for (x in covs_continu) {
+  
+}
+
+```
+
+
+

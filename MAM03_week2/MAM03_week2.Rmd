@@ -1,0 +1,567 @@
+---
+title: "MAM03_Week2"
+author: "Robin Manz, Matias Tolppanen"
+date: "2024-11-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("tidyr")
+library(tidyr)
+```
+
+## Renal transplantation and risk of graft failure
+
+outcome:
+
+            gstatus             = graft-rejection (=1) or not (=0)
+
+            gsurv                = number of months the patient was followed until rejection or censoring
+
+            pstatus             = patient-status at end of follow-up (1=died, 0=alive)
+
+            psurv                = number of months the patient was followed until death or censoring
+
+ 
+
+covariates/risk factors:
+
+            acclft              = age of the patient at transplantation (years)
+
+            dgf                   = delayed graft function (dgf or 0=no dgf)
+
+            aantalre           = number of acute rejection-treatments during the first 6 months post-transplantation (0, 1, 2 or 3)
+
+            creat                = serum creatinine at six-weeks post-transplantation (mumol/L) (marker of kidney-function)
+
+            predias            = diastolic bloodpressure pre-transplantation
+
+            prac                 = panel reactive antibodies (marker of inflammation)
+
+            uprotein           = protein in urine at six-weeks post-transplantation  (geen,  sp/+,  >+) (marker of kidney function)
+
+            cregsh              = number of cross-reactive groups (public HLA epitopes) of the major histocompatibility complex class I shared between donor
+
+                                        and recipient
+
+```{r}
+# Load dataset
+load(file="renaltx.Rdata")
+
+# show the data available
+ls()
+# View(d)
+
+```
+
+## Descriptives
+
+```{r pressure, echo=FALSE}
+d_rejected <- subset(d, gstatus == 1)
+d_normal <- subset(d, gstatus == 0)
+
+# histgrams for the distrubutions of all the variables 
+# outcomes
+hist(d$gsurv, breaks = 20, main="months till rejection or censoring (rejected)")
+hist(d$psurv, breaks=20, main="months till death or censoring")
+hist(d$pstatus, breaks=2, main="Patient status 1 = dead, 0 = alive")
+hist(d$gstatus, breaks=2, main="Graft rejection status 1 = rejected, 0 = not rejected")
+
+# predictors
+# aantalre + acclft + dgf + creat + predias + prac + uprotein + cregsh
+hist(d$acclft, breaks=20, main="Age of transplantation years (acclft)")
+# hist(d$dgf, breaks=20, main="Delay graft function (dgf)")
+hist(d$aantalre, breaks=4, main="Number of rejection treatments within \n the first 6 months(aantalre)")
+hist(d$creat, breaks=20, main="Kidney function (serum creatinine mumol/L)")
+hist(d$predias, breaks=20, main="Diastolic blood pressure pre transplantation")
+hist(d$prac, breaks=20, main="Inflamation markers (Prac)")
+# hist(d$uprotein, breaks=20, main="Protein in urine")
+hist(d$cregsh, breaks=8, main="Number of cross-reactive groups")
+
+
+```
+1. Predictor variables acclft approx. normal distr.
+2. aantalre decreased over time, skewed to the right
+3. createnine skewed to the left
+4. blood pressure normal distributed
+5. prac skewed to the right
+6. cross-reactive groups normal 
+
+## Further analysis
+``` {r}
+# remove missing values
+print(paste("Missing values", toString(sum(is.na(d)))))
+d <- d %>% drop_na()
+print(paste("Missing values", toString(sum(is.na(d)))))
+
+print(paste("Number of patients alive", nrow(subset(d, pstatus==1))))
+print(paste("Number of patients dead", nrow(subset(d, pstatus==0))))
+print(paste("Number of patients with graft rejection", nrow(subset(d, gstatus==1))))
+print(paste("Number of patients with no graft rejection", nrow(subset(d, gstatus==0))))
+
+# confusion table
+table(d$gstatus, d$pstatus)
+# do not know if this is right i am trying to plot the incidence for any given month
+
+get_incidence_graph_rejection <- function(timepoints) {
+  # save the incidences
+  incidences <- c()
+  # for each timepoint
+  for (i in timepoints) {
+    
+    n_ev_in_period <- nrow(subset(d, gstatus==1 & gsurv < i))
+    # total number
+    n_patients_at_risk <- nrow(d)
+    incidences[i] <- n_ev_in_period/ n_patients_at_risk
+  }
+  return(incidences)
+}
+
+inci <- get_incidence_graph_rejection(seq(1, max(d$gsurv)))
+
+plot(inci, main="Incidences per month")
+
+```
+## Kaplan Meier Curve
+
+``` {r} 
+library(ggplot2)
+library(survival)
+
+# user the Surv() mehtod to extract the sourvival proportion
+Y <- Surv(time = d$gsurv, event = d$gstatus == 1)
+summary(Y)
+
+# Splitting it up between predictors (not used)
+# kmfit = survfit(Y ~ addicts$clinic)
+
+# plot the Surv time
+plot(Y, lty = c("solid", "dashed", "dashed"), col = c("black", "grey", "grey"), xlab = "Survival Time In Days", ylab = "Graft rejection probabilities for all patients")
+
+?survfit
+# plot graft rejection 
+d_g_rejected <- subset(d, gstatus == 1)
+y2 <- Surv(time=d_g_rejected$gsurv, event = d_g_rejected$gstatus)
+
+plot(y2, lty = c("solid", "dashed", "dashed"), col = c("black", "grey", "grey"), xlab = "Survival Time In Days", ylab = "Graft rejection probabilities for people with event")
+
+```
+
+## checks for linearity
+```{r}
+plot(d$acclft, d$gsurv)
+model1 = lm(gsurv~acclft, data=d)
+lines(d$acclft,predict(model1),col=2,lwd=2)
+hist(model1$residuals)
+plot(model1)
+
+plot(d$aantalre, d$gsurv)
+model2 = lm(gsurv~aantalre, data=d)
+lines(d$aantalre,predict(model2),col=2,lwd=2)
+hist(model2$residuals)
+plot(model2)
+
+plot(d$creat, d$gsurv)
+model3 = lm(gsurv~creat, data=d)
+lines(d$creat,predict(model3),col=2,lwd=2)
+hist(model3$residuals)
+plot(model3)
+
+plot(d$predias, d$gsurv)
+model4 = lm(gsurv~predias, data=d)
+lines(d$predias,predict(model4),col=2,lwd=2)
+hist(model4$residuals)
+plot(model4)#
+
+plot(d$prac, d$gsurv)
+model5 = lm(gsurv~prac, data=d)
+lines(d$prac,predict(model5),col=2,lwd=2)
+hist(model5$residuals)
+plot(model5)
+
+plot(d$cregsh, d$gsurv)
+model6 = lm(gsurv~cregsh, data=d)
+lines(d$cregsh,predict(model6),col=2,lwd=2)
+hist(model6$residuals)
+plot(model6)
+
+# aantalre + acclft + dgf + creat + predias + prac + uprotein + cregsh
+# might all be just bollucks
+
+```
+A: all decently linear ?
+
+## List of the regression models
+| name  | assumption | suitable (yes/no) |
+| --- | --- | --- |
+| Cox proportional hazards model | linearity of continuous predictors, proportionality, indipendeance of observations | yes ? |
+| Fine-Gray subdistribution hazard model | TODO | TODO | 
+
+## check for proportionality 
+```{r}
+
+coxes <- coxph(Surv(gsurv,gstatus) ~ aantalre + acclft + dgf + creat + predias + prac + uprotein + cregsh, data = d)
+
+coxesa=cox.zph(coxes)
+par(mfrow=c(2,2))
+plot(coxesa[1])
+plot(coxesa[2])
+plot(coxesa[3])
+plot(coxesa[4])
+plot(coxesa[5])
+plot(coxesa[6])
+plot(coxesa[7])
+plot(coxesa[8])
+par(mfrow=c(1,1))
+coxesa
+```
+proportionality results:
+method,     chisqr, df, p
+aantalre  7.8944  1 0.00496
+acclft   14.0144  1 0.00018
+have p-values < 0.05 and indicate violation of the proportionality
+both also have a non-parallel plot
+The others are approximaltely parallel
+
+
+## Trying to fix proportionality for univariate analysis
+
+```{r} 
+
+
+covs <- d[,c("aantalre" , "acclft" , "dgf" ,"creat", "predias", "prac", "uprotein", "cregsh")]
+library(splines)
+psplinespvals <- c()
+aic=c()
+i <- 1
+# acclft
+# test out 1 to 12 degrees of freedom
+for (j in 1:12) {
+  # compute the AIC of the cox-model with i defrees of freedom for the approach
+  aic[j] = AIC(coxph(Surv(gsurv, gstatus) ~ ns(acclft, df=j), data=d))
+}
+
+# plot the aics for the splines, the lowest AIC is the best fit
+plot(aic, type="b", main="acclft", xlab="natural spline penalty (df)")
+# get the best pspline value 
+qq=summary(coxph(Surv(gsurv, gstatus) ~ pspline(acclft), data=d))
+psplinespvals[i] = qq$coefficients[2,6] # ? 
+# add a text with the positions at x and y (you can decipher that on your own (: ))
+text(x=1, y=min(aic,na.rm=T)+(max(aic,na.rm=T)-min(aic,na.rm=T))/2, 
+paste("pspline nonlin p = ", round(psplinespvals[i],4)), adj=0, col=4, cex=0.9)
+
+# creat
+for (j in 1:12) {
+  aic[j] = AIC(coxph(Surv(gsurv, gstatus) ~ ns(creat, df=j), data=d))}
+  plot(aic, type="b", main="creat", xlab="natural spline penalty (df)")
+  qq=summary(coxph(Surv(gsurv, gstatus) ~ pspline(creat), data=d))
+  psplinespvals[i] = qq$coefficients[2,6]
+  text(x=1, y=min(aic,na.rm=T)+(max(aic,na.rm=T)-min(aic,na.rm=T))/2, 
+             paste("pspline nonlin p = ", round(psplinespvals[i],4)), adj=0, col=4, cex=0.9)
+  
+# predias
+for (j in 1:12) {
+  aic[j] = AIC(coxph(Surv(gsurv, gstatus) ~ ns(predias, df=j), data=d))}
+  plot(aic, type="b", main="predias", xlab="natural spline penalty (df)")
+  qq=summary(coxph(Surv(gsurv, gstatus) ~ pspline(predias), data=d))
+  psplinespvals[i] = qq$coefficients[2,6]
+  text(x=1, y=min(aic,na.rm=T)+(max(aic,na.rm=T)-min(aic,na.rm=T))/2, 
+             paste("pspline nonlin p = ", round(psplinespvals[i],4)), adj=0, col=4, cex=0.9)
+
+# prac
+for (j in 1:12) {
+  aic[j] = AIC(coxph(Surv(gsurv, gstatus) ~ ns(prac, df=j), data=d))}
+  plot(aic, type="b", main="prac", xlab="natural spline penalty (df)")
+  qq=summary(coxph(Surv(gsurv, gstatus) ~ pspline(prac), data=d))
+  psplinespvals[i] = qq$coefficients[2,6]
+  text(x=1, y=min(aic,na.rm=T)+(max(aic,na.rm=T)-min(aic,na.rm=T))/2, 
+             paste("pspline nonlin p = ", round(psplinespvals[i],4)), adj=0, col=4, cex=0.9)
+  
+  
+# cregsh
+for (j in 1:12) {
+  aic[j] = AIC(coxph(Surv(gsurv, gstatus) ~ ns(cregsh), data=d))}
+  plot(aic, type="b", main="cregsh", xlab="natural spline penalty (df)")
+  qq=summary(coxph(Surv(gsurv, gstatus) ~ pspline(cregsh), data=d))
+  psplinespvals[i] = qq$coefficients[2,6]
+  text(x=1, y=min(aic,na.rm=T)+(max(aic,na.rm=T)-min(aic,na.rm=T))/2, 
+             paste("pspline nonlin p = ", round(psplinespvals[i],4)), adj=0, col=4, cex=0.9)
+  
+  
+```
+## acclft isnt linear and need splines with df = 4
+
+```{r}
+model2=coxph(Surv(gsurv, gstatus) ~ pspline(acclft), data=d)
+summary(model2)
+
+### ???
+cox_acclft <- coxph(Surv(gsurv, gstatus) ~ ns(acclft,4), data = d)
+cox_s=cox.zph(cox_acclft)
+plot(cox_s)
+summary(cox_acclft)
+
+```
+concodance psplines 0.556
+concodance natural splines 0.563
+
+## Univariate Analysis
+```{r}
+
+# Define the list of predictors
+predictors <- c("aantalre", "acclft", "dgf", "creat", "predias", "prac", "uprotein", "cregsh")
+
+# Initialize a data frame to store results
+results <- data.frame(
+  Predictor = character(),
+  HR = numeric(),
+  `Lower CI` = numeric(),
+  `Upper CI` = numeric(),
+  p.value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Fit Cox model for each predictor
+for (pred in predictors) {
+  # Define the formula for the univariable model
+  if (pred == "acclft") {
+    # Use natural splines for `acclft`
+    formula <- as.formula("Surv(gsurv, gstatus) ~ ns(acclft, 4)")
+  } else {
+    # Standard formula for other predictors
+    formula <- as.formula(paste("Surv(gsurv, gstatus) ~", pred))
+  }
+  
+  # Fit the Cox proportional hazards model
+  cox_model <- coxph(formula, data = d)
+  
+  # Extract hazard ratio, confidence interval, and p-value
+  summary_cox <- summary(cox_model)
+  hr <- summary_cox$coef[1, "exp(coef)"]
+  lower_ci <- summary_cox$conf.int[1, "lower .95"]
+  upper_ci <- summary_cox$conf.int[1, "upper .95"]
+  p_value <- summary_cox$coef[1, "Pr(>|z|)"]
+  
+  # Store the results
+  results <- rbind(results, data.frame(
+    Predictor = pred,
+    HR = hr,
+    `Lower CI` = lower_ci,
+    `Upper CI` = upper_ci,
+    p.value = round(p_value, 6)
+  ))
+}
+
+# Display the results
+print(results)
+
+```
+## what kind of relationship ? 
+
+```{r}
+# plot the predictions
+cox_acclft_model <- coxph(Surv(gsurv, gstatus) ~ ns(acclft,4), data = d)
+preds <- predict(cox_acclft_model, type="lp")
+plot(d$acclft, preds)
+text(x = max(d$acclft) * 0.7, y = max(preds) * 0.8, labels=paste("AIC =", round(AIC(cox_acclft_model), 2), col = "blue"))
+summary(cox_acclft_model)
+
+cox_acclft_log_model <- coxph(Surv(gsurv, gstatus) ~ log(acclft), data = d)
+preds <- predict(cox_acclft_log_model, type="lp")
+plot(d$acclft, preds)
+text(x = max(d$acclft) * 0.7, y = max(preds) * 0.8, labels=paste("AIC =", round(AIC(cox_acclft_log_model), 2), col = "blue"))
+summary(cox_acclft_log_model)
+
+
+# concodance psplines 0.556
+# concodance natural splines 0.563
+# concordance log model 0.532
+
+
+qq1=coxph(Surv(gsurv, gstat) ~ acclft, 
+        data=d)
+cox.zph(qq1)
+plot(cox.zph(qq1))
+abline(h=0, col=2, lty=3, lwd=3)
+
+```
+## Power plot
+```{r}
+# Initialize AIC container
+aicc <- c()
+
+# Define power sequence (λ)
+power <- seq(-2, 2, 0.1)
+
+# Loop through each power value and fit the Cox model
+for (j in 1:length(power)) {
+  # Apply the power transformation to acclft (or any other predictor you're interested in)
+  transformed_pred <- d$acclft^power[j]  # Adjust "d$acclft" to your column name
+  
+  # Fit the Cox model with the transformed predictor
+  cox_model <- coxph(Surv(gsurv, gstatus) ~ transformed_pred, data = d)
+  
+  # Store AIC of the fitted model
+  aicc[j] <- AIC(cox_model)
+}
+
+# Plot the AIC values against the power values (λ)
+plot(power[power != 0], aicc[power != 0], xlab = "lambda", ylab = "AIC", type = "b")
+
+# Find the power that gives the minimum AIC
+best_power <- power[which.min(aicc)]
+best_power
+
+```
+
+## results Univariate Analysis: 
+aantalre(p<0.0001), acclft(p<0.004), creat(p<0,004), uprotein(p<0.002) and cregsh (p<0.001)
+are significant
+
+
+
+
+
+
+## Cox regression
+
+Assumtions:
+1. linearity (can be dropped by using other mehtods)
+2. proportionality
+
+``` {r}
+library(splines)
+#plot(survfit(Surv(gsurv, gstatus) ~ aantalre + acclft + dgf + creat + predias + prac + uprotein + cregsh, data=d))
+plot(survfit(Surv(gsurv, gstatus) ~ acclft, data=d))
+
+# perform cox regression assuming linearity pspline for acclft
+coxes <- coxph(Surv(gsurv,gstatus) ~ aantalre + ns(acclft, 4) + dgf + creat + predias + prac + uprotein + cregsh, data = d)
+?coxph
+
+coxesa=cox.zph(coxes)
+par(mfrow=c(2,2))
+plot(coxesa[1])
+plot(coxesa[2])
+plot(coxesa[3])
+plot(coxesa[4])
+plot(coxesa[5])
+plot(coxesa[6])
+plot(coxesa[7])
+plot(coxesa[8])
+par(mfrow=c(1,1))
+coxesa
+
+# pspline(acclft) 13.465  4.05 0.0096
+?pspline
+c <- coxph(Surv(gsurv,gstatus) ~ acclft, data = d)
+cs <- cox.zph(c)
+plot(cs[1])
+cs
+c <- coxph(Surv(gsurv,gstatus) ~ pspline(acclft), data = d)
+cs <- cox.zph(c)
+plot(cs[1])
+cs
+# results form the cox regression
+# aantalre  7.8944  1 0.00496
+# acclft   14.0144  1 0.00018
+# The lines are not straight so we need to adjust them
+
+
+# TODO check for linearity 
+# plot residuals of modern regression against the mean
+```
+
+## Varibale adjustment
+
+
+Plot age against hazard
+```{r}
+library(ggplot2)
+library(ggsurvfit)
+library(survminer)
+# Create age groups based on quantiles
+breaks <- quantile(d$acclft, probs = c(0,0.1, 0.2,0.3, 0.4,0.5, 0.6,0.7, 0.8,0.9, 1))
+d$age_group <- cut(d$acclft, breaks = breaks, include.lowest = TRUE)
+
+surv_fit_age <- survfit(Surv(gsurv, gstatus) ~ pspline(acclft), data = d)
+
+ggsurvplot(surv_fit_age, xlab = "Time", ylab = "Survival Probability", 
+           title = "Kaplan-Meier Survival Curves by Age Group", 
+           legend.title = "Age Group")
+
+ggsurvplot(surv_fit_age, fun = "cumhaz", xlab = "Time", ylab = "Cumulative Hazard", 
+           title = "Cumulative Hazard by Age Group", legend.title = "Age Group")
+
+
+# time dependeant interaction with acclft(age)
+d$age_time <- d$acclft
+c <- coxph(Surv(gsurv,gstatus) ~ age_time, data = d)
+cs <- cox.zph(c)
+plot(cs[1])
+```
+
+### Landmarking plot the unnecesairy way
+
+```{r}
+# Landmarks max(d$gsurv) == 169.06, min(6.15)
+# (max-min) / 5 = 32.58 steps -> intervals of 30
+# set landmarks
+apply_landmarking <- function(covariate) {
+  landmarks=c(0,30,60,90,120,150,180)
+  beta=matrix(NA,nrow=(length(landmarks)-1),ncol=2)
+  cstat=c()
+  for (i in 1:(length(landmarks)-1)) {
+    # get subset for the landmark
+    dx=subset(d, gsurv > landmarks[i])
+    # set gstatus of every partition where the event didnt happen in to 0
+    dx$gstatus[dx$gsurv>landmarks[(i+1)]]=0
+    # insert new partition ?
+    dx$gsurv[dx$gsurv>landmarks[(i+1)]]=landmarks[(i+1)]
+    
+    form <- as.formula(paste("Surv(gsurv, gstatus)~", covariate))
+    help6=summary(coxph(form, data=dx))
+    beta[i,1:2]=help6$coefficients[c(1,3)]
+    cstat[i]=help6$concordance[1]
+  }
+  plot(landmarks[1:(length(landmarks)-1)],
+        beta[,1], xlab="landmark gsurv (months)",
+        ylab="log Hazard Ratio",
+        ylim=c(-0.05,0.05))
+  abline(h=0,lty=2)
+  for (i in 1:nrow(beta)) {
+     lines(c(landmarks[i],landmarks[i]),
+        c(beta[i,1]-1.96*beta[i,2],
+          beta[i,1]+1.96*beta[i,2]))
+  }
+  for (i in cstat){
+    print(cstat)
+  }
+}
+
+covs <- c("acclft", "aantalre")
+for (x in covs) {
+  apply_landmarking(x)
+}
+```
+
+## sophies model
+
+```{r}
+landmarks <- seq(min(d$gsurv), max(d$gsurv), length.out=6)
+
+dat_split <- survSplit(Surv(gsurv, gstatus) ~ acclft, d, cut=landmarks, episode = "timegrp", start="tstart", end = "tstop")
+
+split_model <- coxph(Surv(tstart, tstop, gstatus) ~ acclft * strata(timegrp), data=dat_split)
+
+summary(coxph(Surv(gsurv, gstatus) ~ acclft, data=d))
+
+summary(split_model)
+
+AIC(coxph(Surv(gsurv, gstatus) ~ acclft, data=d))
+
+# so we know that the optimal AIC is generated with having the effect of age vary with the age groups
+AIC(split_model)
+
+cox.zph(split_model)
+```
