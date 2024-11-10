@@ -6,6 +6,7 @@ library(dplyr)
 library(splines)
 library(rms)
 library(cmprsk)
+library(e1071)
 ```
 
 ```{r}
@@ -30,15 +31,42 @@ renaltx_clean
 ```
 Exploratory data analysis
 ```{r}
+# List of quantitative variables and their bin widths
 quant_vars <- c("acclft", "creat", "predias", "prac", "cregsh")
+binwidths <- list("acclft" = 10, "creat" = 5, "predias" = 10, "prac" = 10, "cregsh" = 1)
+
+# Loop through each variable to calculate skewness, determine transformation, and plot
 for (var in quant_vars) {
-  print(ggplot(renaltx_clean, aes_string(x = var)) +
-    geom_histogram(binwidth = 10, fill = "blue", color = "black") +
-    theme_minimal() +
-    labs(title = paste("Histogram of", var)))
+  # Calculate skewness score
+  skewness_score <- skewness(renaltx_clean[[var]], na.rm = TRUE)
+  
+  # Interpret skewness score
+  if (abs(skewness_score) >= 1) {
+    cat(var, "is highly skewed (skewness:", skewness_score, "), applying log transformation and replacing original.\n")
+    
+    # Apply log transformation and replace the original column
+    renaltx_clean[[var]] <- log(renaltx_clean[[var]] + 1)
+    
+    # Plot the log-transformed histogram
+    print(ggplot(renaltx_clean, aes_string(x = var)) +
+      geom_histogram(fill = "green", color = "black") +
+      theme_minimal() +
+      labs(title = paste("Log-Transformed Histogram of", var)))
+    
+  } else {
+    cat(var, "has acceptable skewness (skewness:", skewness_score, "), no transformation applied.\n")
+    
+    # Plot original histogram only if not highly skewed
+    print(ggplot(renaltx_clean, aes_string(x = var)) +
+      geom_histogram(binwidth = binwidths[[var]], fill = "blue", color = "black") +
+      theme_minimal() +
+      labs(title = paste("Histogram of", var)))
+  }
 }
 ```
-Assess linearity using Martingale residuals
+Here we did a log transform to creat and prac
+
+Next lets assess linearity using Martingale residuals and splines.
 ```{r}
 # Define the survival object
 surv_object <- Surv(time = renaltx_clean$gsurv, event = renaltx_clean$gstatus)
@@ -60,38 +88,86 @@ for (var in quant_vars) {
 }
 ```
 
-# Based on the plots, decide if transformations are needed
-# For illustration, let's assume 'creat' and 'predias' need transformation
+```{r}
+plot_splines <- function(covariate) {
+  print(paste("############", covariate, "##########"))
+  psplinespvals <- c()
+  aic=c()
+  i <- 1
+  # acclft
+  # test out 1 to 12 degrees of freedom
+  for (j in 1:10) {
+    # compute the AIC of the cox-model with i defrees of freedom for the approach
+    formula <- as.formula(paste("Surv(gsurv, gstatus) ~ ns(", covariate, ", df=", toString(j), ")"))
+    aic[j] = AIC(coxph(formula, data=renaltx_clean))
+  }
+  
+  # plot the aics for the splines, the lowest AIC is the best fit
+  plot(aic, type="b", main=covariate, xlab="natural spline penalty (df)")
+  # get the best pspline value 
+  formula <- as.formula(paste("Surv(gsurv, gstatus) ~ pspline(", covariate, ", data=d)"))
+  qq=summary(coxph(formula, data=renaltx_clean))
+  psplinespvals[i] = qq$coefficients[2,6] # ? 
+  # add a text with the positions at x and y (you can decipher that on your own (: )
+  text(x=1, y=min(aic,na.rm=T)+(max(aic,na.rm=T)-min(aic,na.rm=T))/2, 
+  paste("pspline nonlin p = ", round(psplinespvals[i],4)), adj=0, col=4, cex=0.9)
+  
+  # get the minimum AIC
+  best_df = which.min(aic)
+  # Test linearity by comparing AIcs
+  # Linear model
+  formula <- as.formula(paste("Surv(gsurv, gstatus) ~ ", covariate))
+  linear_model <- coxph(formula, data = renaltx_clean)
+  aic_linear <- AIC(linear_model)
+  
+  formula <- as.formula(paste("Surv(gsurv, gstatus) ~ ns(", covariate, ", df= ", toString(best_df), ")"))
+  spline_model <- coxph(formula, data = renaltx_clean)
+  aic_spline <- AIC(spline_model)
+  
+  # Compare AICs
+  print(paste("AIC (Linear):", round(aic_linear, 2)))
+  print(paste("AIC (Spline):", round(aic_spline, 2)))
+  
+  # Likelihood Ratio Test
+  lrt <- anova(linear_model, spline_model, test = "Chisq")
+  print(lrt)
+  
+  # Visual inspection
+  #plot(spline_model)
+}
+covs_continu <- c("aantalre" , "acclft" ,"creat", "predias", "prac", "cregsh")
 
-# Transform 'creat' and 'predias' using restricted cubic splines
-# Setup for rms package
-#dd <- datadist(renaltx_clean)
-#options(datadist = "dd")
+for(x in quant_vars) {
+  plot_splines(x)
+}
+```
+Based on the martingale residuals and splines we don't need transformations.
 
-# Fit multivariable Cox model with splines
-#cox_model <- cph(surv_object ~ acclft + dgf + aantalre + creat +
- #                  predias + uprotein + prac + cregsh,
-  #               data = renaltx_clean, x = TRUE, y = TRUE, surv = TRUE)
+Although the acclft, and prac have better splines at >1 knot, looking at the difference of the value between the linear line and the smoothed lines AIC in combination with the Martingale, there is no reason to do anything extra.
 
+```{r}
+cox_model <- cph(surv_object ~ acclft + dgf + aantalre + creat + 
+                  predias + uprotein + prac + cregsh,
+                  data = renaltx_clean, x = TRUE, y = TRUE, surv = TRUE)
+```
+Next, checking for multicolinearity
 ```{r}
 # VIF
 vif_values <- vif(cox_model)
 vif_values
 ```
+Very acceptable VIF values. No concern for multicolinearity.
+
+Let's move on to the next assuption of proportinoality in cox.
 ```{r}
-# Check proportional hazards assumption
 ph_test <- cox.zph(cox_model)
 # Schoenfeld residuals
 ggcoxzph(ph_test)
 ph_test
 ```
+Based on the results, I would suggest applying Landmarking to acclft, dgf, and aantalre.
 
-# If any variables violate PH assumption -> stratification or including time-dependent covariates
-
-# Example:
-# cox_model <- cph(surv_object ~ acclft + aantalre + rcs(creat, 4) + rcs(predias, 4) +
-#                    prac + uprotein + cregsh + strata(dgf),
-#                  data = renaltx_clean, x = TRUE, y = TRUE, surv = TRUE)
+Create a new model based on these.
 
 ```{r}
 # Compute concordance statistic (c-index)
@@ -101,7 +177,7 @@ validate_cox <- validate(cox_model, method = "boot", B = 200, dxy = TRUE)
 print(validate_cox)
 
 # c-index
-dxy_value <- validate_cox["Dxy", "index.corrected"]  # Adjust based on column name or position if necessary
+dxy_value <- validate_cox["Dxy", "index.corrected"]
 c_index <- (dxy_value / 2) + 0.5
 print(c_index)
 
