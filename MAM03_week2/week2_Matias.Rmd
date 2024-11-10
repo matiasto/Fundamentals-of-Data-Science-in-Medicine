@@ -10,7 +10,8 @@ library(e1071)
 ```
 
 ```{r}
-load("/Users/matiastolppanen/Downloads/renaltx.Rdata")
+# load("/Users/matiastolppanen/Downloads/renaltx.Rdata")
+load(file="renaltx.Rdata")
 ls()
 ```
 ```{r}
@@ -207,12 +208,55 @@ fg_model <- crr(ftime = renaltx_clean$time_to_event,
 
 summary(fg_model)
 ```
+Compute best Landmarking breakpoints
 
 ```{r}
+variables_landmarking <- c("acclft", "dgf", "aantalre")
+results <- c()
+for (var in variables_landmarking) {
+  formula <- as.formula(paste("surv_object ~", var))
+  # check out samples form 3-10 landmarks
+  aics <- c()
+  for (i in 1:10) {
+    # get 5 intervals from 
+    landmarks <- seq(min(renaltx_clean$gsurv), max(renaltx_clean$gsurv), length.out=i)
+    # split data based on landmarks
+    split = survSplit(formula, renaltx_clean, cut=landmarks, episode ="timegrp", start="tstart", end="tstop")
+    
+    landmark_formula <- as.formula(paste("surv_object ~", var, "* strata(timegrp)")) 
+    cox_lm <- coxph(landmark_formula, data = split)
+    aics[i] <- AIC(cox_lm)
+  }
+  plot(aics, main=paste("AICs for ", var))
+}
+
+
+# i will for no particular reason settle for 5
+
+```
+
+```{r}
+# Split between landmarking and no landmarking
+# all_variables <- c("acclft", "dgf", "aantalre", "creat", "predias", "prac", "uprotein", "cregsh")
+variables_no_landmarking <- c("creat", "predias", "prac", "uprotein", "cregsh")
+variables_landmarking <- c("acclft", "dgf", "aantalre")
+
 univariable_results <- list()
-for (var in c("acclft", "dgf", "aantalre", "creat", "predias", "prac", "uprotein", "cregsh")) {
+# Univariate without landmarking
+for (var in variables_no_landmarking) {
   formula <- as.formula(paste("surv_object ~", var))
   uni_cox <- coxph(formula, data = renaltx_clean)
+  univariable_results[[var]] <- summary(uni_cox)
+}
+
+# Univariate with landmarking
+lms <- seq(min(renaltx_clean$gsurv), max(renaltx_clean$gsurv), length.out=5)
+# split data based on landmarks
+for (var in variables_landmarking) {
+  lm_formula <- as.formula(paste("surv_object ~", var))
+  split_data = survSplit(lm_formula, renaltx_clean, cut=lms, episode ="timegrp", start="tstart", end="tstop")
+  form <- as.formula(paste("surv_object ~", var, "* strata(timegrp)"))
+  uni_cox <- coxph(form, data = split_data)
   univariable_results[[var]] <- summary(uni_cox)
 }
 
