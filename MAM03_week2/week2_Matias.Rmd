@@ -1,0 +1,176 @@
+```{r}
+library(survival)
+library(survminer)
+library(ggplot2)
+library(dplyr)
+library(splines)
+library(rms)
+library(cmprsk)
+```
+
+```{r}
+load("/Users/matiastolppanen/Downloads/renaltx.Rdata")
+ls()
+```
+```{r}
+# Remove missing data
+vars_of_interest <- c("gstatus", "gsurv", "pstatus", "psurv", "acclft", "dgf",
+                      "aantalre", "creat", "predias", "prac", "uprotein", "cregsh")
+renaltx_clean <- d %>% select(all_of(vars_of_interest)) %>% na.omit()
+
+nrow(renaltx_clean)
+
+renaltx_clean$dgf <- factor(renaltx_clean$dgf)
+renaltx_clean$aantalre <- factor(renaltx_clean$aantalre)
+renaltx_clean$uprotein <- factor(renaltx_clean$uprotein)
+dummies <- model.matrix(~ uprotein - 1, data = renaltx_clean)
+renaltx_clean <- cbind(renaltx_clean, dummies)
+
+renaltx_clean
+```
+Exploratory data analysis
+```{r}
+quant_vars <- c("acclft", "creat", "predias", "prac", "cregsh")
+for (var in quant_vars) {
+  print(ggplot(renaltx_clean, aes_string(x = var)) +
+    geom_histogram(binwidth = 10, fill = "blue", color = "black") +
+    theme_minimal() +
+    labs(title = paste("Histogram of", var)))
+}
+```
+Assess linearity using Martingale residuals
+```{r}
+# Define the survival object
+surv_object <- Surv(time = renaltx_clean$gsurv, event = renaltx_clean$gstatus)
+
+# null Cox model
+null_cox_model <- coxph(surv_object ~ 1, data = renaltx_clean)
+
+# martingale residuals
+renaltx_clean$martingale_resid <- residuals(null_cox_model, type = "martingale")
+
+# martingale residuals against quantitative variables
+for (var in quant_vars) {
+  print(ggplot(renaltx_clean, aes_string(x = var, y = "martingale_resid")) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "loess") +
+    theme_minimal() +
+    labs(x = var, y = "Martingale Residuals",
+         title = paste("Martingale Residuals vs", var)))
+}
+```
+
+# Based on the plots, decide if transformations are needed
+# For illustration, let's assume 'creat' and 'predias' need transformation
+
+# Transform 'creat' and 'predias' using restricted cubic splines
+# Setup for rms package
+#dd <- datadist(renaltx_clean)
+#options(datadist = "dd")
+
+# Fit multivariable Cox model with splines
+#cox_model <- cph(surv_object ~ acclft + dgf + aantalre + creat +
+ #                  predias + uprotein + prac + cregsh,
+  #               data = renaltx_clean, x = TRUE, y = TRUE, surv = TRUE)
+
+```{r}
+# VIF
+vif_values <- vif(cox_model)
+vif_values
+```
+```{r}
+# Check proportional hazards assumption
+ph_test <- cox.zph(cox_model)
+# Schoenfeld residuals
+ggcoxzph(ph_test)
+ph_test
+```
+
+# If any variables violate PH assumption -> stratification or including time-dependent covariates
+
+# Example:
+# cox_model <- cph(surv_object ~ acclft + aantalre + rcs(creat, 4) + rcs(predias, 4) +
+#                    prac + uprotein + cregsh + strata(dgf),
+#                  data = renaltx_clean, x = TRUE, y = TRUE, surv = TRUE)
+
+```{r}
+# Compute concordance statistic (c-index)
+# Using validate function with bootstrapping
+set.seed(42)
+validate_cox <- validate(cox_model, method = "boot", B = 200, dxy = TRUE)
+print(validate_cox)
+
+# c-index
+dxy_value <- validate_cox["Dxy", "index.corrected"]  # Adjust based on column name or position if necessary
+c_index <- (dxy_value / 2) + 0.5
+print(c_index)
+
+
+# Calibration plot
+cal <- calibrate(cox_model, method = "boot", B = 200, u = 150)
+plot(cal)
+
+# time to event is minimum of 'gsurv' and 'psurv'?
+renaltx_clean$time_to_event <- pmin(renaltx_clean$gsurv, renaltx_clean$psurv)
+
+# 1 = graft rejection, 2 = death before graft rejection, 0 = censoring
+renaltx_clean$event_type <- with(renaltx_clean,
+                                 ifelse(gstatus == 1 & gsurv <= psurv, 1,
+                                        ifelse(pstatus == 1 & psurv < gsurv, 2, 0)))
+
+# Prepare covariate matrix exclude intercept from model.matrix
+covariate_matrix <- model.matrix(~ acclft + dgf + aantalre + creat + predias +
+                                   prac + uprotein + cregsh, data = renaltx_clean)[, -1]
+
+# Fit Fine and Gray model for event type 1 (graft rejection)
+fg_model <- crr(ftime = renaltx_clean$time_to_event,
+                fstatus = renaltx_clean$event_type,
+                cov1 = covariate_matrix,
+                failcode = 1,
+                cencode = 0)
+
+summary(fg_model)
+```
+
+```{r}
+univariable_results <- list()
+for (var in c("acclft", "dgf", "aantalre", "creat", "predias", "prac", "uprotein", "cregsh")) {
+  formula <- as.formula(paste("surv_object ~", var))
+  uni_cox <- coxph(formula, data = renaltx_clean)
+  univariable_results[[var]] <- summary(uni_cox)
+}
+
+for (var in names(univariable_results)) {
+  cat("\nUnivariable Cox regression for", var, ":\n")
+  print(univariable_results[[var]])
+}
+```
+
+```{r}
+# hazard ratios and confidence intervals
+
+final_cox_model <- cph(surv_object ~ acclft + dgf + aantalre + rcs(creat, 4) +
+                         rcs(predias, 4) + uprotein + prac + cregsh,
+                       data = renaltx_clean, x = TRUE, y = TRUE, surv = TRUE)
+
+print(summary(final_cox_model))
+
+# plot survival curves for different levels of 'dgf'
+surv_fit <- survfit(final_cox_model, newdata = data.frame(
+  acclft = median(renaltx_clean$acclft),
+  dgf = levels(renaltx_clean$dgf),
+  aantalre = median(as.numeric(as.character(renaltx_clean$aantalre))),
+  creat = median(renaltx_clean$creat),
+  predias = median(renaltx_clean$predias),
+  prac = median(renaltx_clean$prac),
+  uprotein = levels(renaltx_clean$uprotein)[1],
+  cregsh = median(renaltx_clean$cregsh)
+))
+
+plot(surv_fit, col = 1:length(levels(renaltx_clean$dgf)),
+     xlab = "Time (months)", ylab = "Survival Probability")
+legend("bottomleft", legend = levels(renaltx_clean$dgf),
+       col = 1:length(levels(renaltx_clean$dgf)), lty = 1)
+```
+
+
