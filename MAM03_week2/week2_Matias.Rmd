@@ -269,9 +269,15 @@ for (var in names(univariable_results)) {
 ```{r}
 # hazard ratios and confidence intervals
 
+lms <- seq(min(renaltx_clean$gsurv), max(renaltx_clean$gsurv), length.out=5)
+# split data based on landmarks
+multi_formula <- as.formula(paste("surv_object ~ acclft + dgf + aantalre + creat +
+                         predias + uprotein + prac + cregsh"))
+multi_split_data = survSplit(multi_formula, renaltx_clean, cut=lms, episode ="timegrp", start="tstart", end="tstop")
+
 final_cox_model <- cph(surv_object ~ acclft + dgf + aantalre + rcs(creat, 4) +
                          rcs(predias, 4) + uprotein + prac + cregsh,
-                       data = renaltx_clean, x = TRUE, y = TRUE, surv = TRUE)
+                       data = multi_split_data, x = TRUE, y = TRUE, surv = TRUE)
 
 print(summary(final_cox_model))
 
