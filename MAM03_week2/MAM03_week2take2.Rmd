@@ -2,7 +2,7 @@
 title: "Survival Analysis"
 author: "Robin Manz, Matias Tolppanen"
 date: "2024-11-08"
-output: html_document
+output: html_notebook
 ---
 
 ```{r setup, include=FALSE}
@@ -45,6 +45,14 @@ ls()
 # remove missing values
 d <- d %>% drop_na()
 ```
+
+## List of the regression models
+| name  | assumption | suitable (yes/no) |
+| --- | --- | --- |
+| Cox proportional hazards model | linearity of continuous predictors, proportionality, indipendeance of observations | yes ? |
+| Kaplan-Meier Curve | 
+| Fine-Gray subdistribution hazard model | TODO | TODO | 
+
 
 ## Kaplan Meier curve
 
@@ -146,13 +154,13 @@ library(survival)
 perform_landmarking <- function(covariate) {
   formula <- as.formula(paste("Surv(gsurv, gstatus) ~", covariate))
   # compute landmarks (we chose 5 intervals
-  landmarks <- seq(min(d$gsurv), max(d$gsurv), length.out=3)
+  landmarks <- seq(min(d$gsurv), max(d$gsurv), length.out=6)
   #landmarks <- c(0, 30, 60, 90, 120, 150, 180)
   print(landmarks)
   # do the survival time split
   dx = survSplit(formula, d, cut=landmarks, episode ="timegrp", start="tstart", end="tstop")
   # exact the same results as the analysis with the original dataset in d1
-  View(dx)
+  
   print("#### Normal model ######")
   cox_n <- coxph(Surv(gsurv, gstatus) ~ ns(acclft, 4), data = d)
   summary(cox_n)
@@ -160,8 +168,7 @@ perform_landmarking <- function(covariate) {
   cox_n_szph=cox.zph(cox_n)
   print(cox_n_szph)
   
-  print("###### ladmark model
-    ########")
+  print("###### ladmark model ########")
   if (covariate == "acclft") {
     formula <- as.formula("Surv(tstart, tstop, gstatus) ~ ns(acclft, 4)")
   } else {
@@ -185,10 +192,10 @@ perform_landmarking <- function(covariate) {
   print(summary(int_cox))
   print(AIC(int_cox))
   # TODO fix too small number bug
-  cox_int_szph=cox.zph(int_cox)
-  print(cox_int_szph)
+  #cox_int_szph=cox.zph(int_cox)
+  #print(cox_int_szph)
   
-  validate(int_cox, method="boot", B=100) 
+  #validate(int_cox, method="boot", B=100) 
 
 }
 
@@ -220,14 +227,13 @@ plot_slines_multi <- function (cov) {
   plot(coxesa[7])
   plot(coxesa[8])
   par(mfrow=c(1,1))
-  coxesa
 }
 
 
 covs_continu <- c("aantalre" , "acclft" ,"creat", "predias", "prac", "cregsh")
 
 for (x in covs_continu) {
-  
+  plot_slines_multi(x)
 }
 
 ```

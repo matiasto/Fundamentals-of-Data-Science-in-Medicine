@@ -275,9 +275,14 @@ multi_formula <- as.formula(paste("surv_object ~ acclft + dgf + aantalre + creat
                          predias + uprotein + prac + cregsh"))
 multi_split_data = survSplit(multi_formula, renaltx_clean, cut=lms, episode ="timegrp", start="tstart", end="tstop")
 
+library(rms)
+dd <- datadist(multi_split_data)
+options(datadist = "dd")
+
 final_cox_model <- cph(surv_object ~ acclft + dgf + aantalre + rcs(creat, 4) +
                          rcs(predias, 4) + uprotein + prac + cregsh,
                        data = multi_split_data, x = TRUE, y = TRUE, surv = TRUE)
+
 
 print(summary(final_cox_model))
 
