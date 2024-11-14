@@ -1,0 +1,335 @@
+---
+title: 'week 3 assignment: aorta diameter growth in Marfan syndrome'
+author: "Robin Manz, Matias Tolppanen"
+date: "2024-11-12"
+output: html_notebook
+---
+## Librarys 
+```{r setup, include=FALSE}
+# librarys
+knitr::opts_chunk$set(echo = TRUE)
+library(lme4)
+library(merTools)
+library(flexplot)
+# install.packages("devtools")
+# devtools::install_github("dustinfife/flexplot")
+```
+## Import 
+
+```{r marfan}
+data <- read.csv("marfan.csv", header=TRUE, stringsAsFactors=FALSE)
+```
+
+A1: Start by giving a data description.
+## Descriptive
+| Variable | Description | 
+| --- | --- | 
+| patnr | number of the patient (1, 2, 3,..., 159) | 
+| metingnr | countvariable denoting the number of the diameter |
+| **measurement in the same patient** |
+| diameter | aortadiameter measurement (mm) |
+| age | age at the time of the measurement (years) |
+| sexe | gender of the patient: 1=male, 0=female | 
+
+q1: what is the average growth rate per year
+does the average growth vary with age
+does the average growth rates differ between men and women
+which patients show fast(er) growth and which patients show ‘stable’ disease
+predict aorta diameter at various ages for new patients
+predict next year’s aorta-diameter for the current patients
+
+
+
+```{r pressure, echo=FALSE}
+# Basic descriptives
+n_pat <- length(unique(data$patnr))
+print(paste("Number of entries:", nrow(data)))
+print(paste("Number of unique patiens", n_pat))
+hist(data$metingnr, main=paste("number of the measurement mean:", mean(data$metingnr)))
+hist(data$diameter, main=paste("diameter of the aortas mean:", mean(data$diameter)))
+hist(data$age, main=paste("Age mean:", mean(data$age) ))
+
+# missing values
+print(sum(is.na(data$column_name)))
+# number of encounters per patient
+n_pat_encounters <- seq(0,0,length.out=n_pat)
+for (row in 1:nrow(data)) {
+  patnr <- data[row, "patnr"]
+  n_pat_encounters[patnr] <- n_pat_encounters[patnr] +1
+}
+hist(n_pat_encounters, main="encounters per patient")
+
+# average growth rate per year. 
+# they are sorted per patientnr
+growths_per_year <- numeric()
+last_diameter <- -1
+last_patnr <- -1
+last_age <- -1
+for (row in 1:nrow(data)) {
+  if (last_patnr == data[row, "patnr"]) {
+    # case same patient as the last time
+    dia_diff <- data[row, "diameter"] - last_diameter
+    age_diff <- data[row, "age"] - last_age
+    # diff per year 
+    # Calculate difference per year
+    if (age_diff != 0) {  # Avoid division by zero
+      diff_per_year <- dia_diff / age_diff
+      growths_per_year <- c(growths_per_year, diff_per_year)  # Append to the vector
+    }
+    
+  } else {
+    # case new patient
+    # save initial data
+    last_diameter <- data[row, "diameter"]
+    last_patnr <- data[row, "patnr"]
+    last_age <- data[row, "age"]
+  }
+}
+print(paste("Average growth per year", mean(growths_per_year)))
+
+```
+
+## Check linearity of age and diameter
+```{r}
+library(lme4)
+library(nlme)
+
+plot(data$age, data$diameter, main = "Age vs Diameter")
+
+linear_model <- glm(diameter ~ age, data = data)
+summary(linear_model)
+#m1 <- lme(diameter ~ age, data=data)
+
+summary(m1)
+```
+
+
+```{r} 
+# baseline model, no predictor, just means
+baseline_model <- lmer(diameter ~ 1 + (1|patnr), data = data )
+# add age to the model, age is random effect
+# random slope and random intercept
+age_model <- lmer(diameter ~ age + (age|patnr), data = data)
+
+print("comparison baseline model vs age model")
+model.comparison(baseline_model, age_model)
+# the age model is widely favourable
+
+sex_model <- lmer(diameter ~ sexe + (sexe | patnr), data = data)
+print("comparison baseline model vs sex_model")
+
+model.comparison(baseline_model, sex_model)
+# Sex model is better
+
+
+#### Figure out if age should be fixed or not
+# fixed age model same slope but different intercept
+fixed_age_model <- lmer(diameter ~ age + (1| patnr), data = data)
+
+visualize(age_model, plot="model", sample=50)
+visualize(fixed_age_model, plot="model", sample=50)
+
+print("comparison age_model vs fixex_age_model")
+model.comparison(age_model, fixed_age_model)
+
+## the age model is favoured by p-value in the comparison, AIC and bayes factor
+estimates(age_model)
+
+#### Figure out if sex should be fixed or not
+fixed_sex_model <- lmer(diameter ~ sexe + (1| patnr), data= data)
+
+visualize(sex_model, plot="model", sample=50)
+visualize(fixed_sex_model, plot="model", sample=50)
+
+print("comparison sex_model vs fixed_sex_model")
+model.comparison(sex_model, fixed_sex_model)
+# fixed model is not significantly better than the sex model
+
+
+# get a plot for comparisons
+compare.fits(diameter ~ age | patnr, data = data, model1 = baseline_model, model2= age_model, clusters = 10)
+
+# add sex to model
+#age_sex_model <- lmer(diameter ~ age + sexe + (1|patnr))
+```
+
+Results: 
+- age should be modeled as random effect (age + (age|patnr))
+- sexe should be modeled as fixed effect (sexe + (1|sexe)) also sex does not vary within clusters so it has to be fixed
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+## Model with both variables
+```{r}
+
+full_model <- lmer(diameter ~ age + sexe + (age|patnr), data = data)
+
+model.comparison(full_model, age_model)
+
+# Full model is significantly better based on AIC and bayes factor
+
+compare.fits(diameter~ age | sexe + patnr, data=data, model1=age_model, model2=full_model)
+
+summary(full_model)
+# the average diameter for someone of average age and sex
+# 27.18633 every year on average increases the diameter by 0.39761
+# sex == 1 (male) increases the average diameter by 8.46241
+estimates(full_model)
+# plot residuals for linearity
+plot(residuals(full_model))
+plot(residuals(age_model) ~ data$age)
+
+# include an interaction between sex and age and see if it is a better model than without
+age_sex_inter_model <- lmer(diameter ~ age*sexe + (age|patnr), data = data)
+
+model.comparison(full_model, age_sex_inter_model)
+# AIC, bic and bayes factor favor the full model by a tiny bit, but the comparison is not significant. 
+# This indicates that interactions between age and sex are not significant, hence there is no different growth rates between women and men
+
+```
+
+## Answers
+
+- the average growth per year of age is 0.39761
+- the average growth rate does not vary with age since the relationship between age and diameter is linear. Plotting the residuals against age it can be seen that they are not increasing in time, indicating a adequate fit of the linear model. 
+- the average growth rate is not significantly different between men and women. The model with the interaction term does not perform significantly better than the model without the interaction
+
+
+## get slopes per patient
+```{r}
+
+# Extract the random effects for age (growth rate) for each patient
+random_effects <- ranef(full_model)$patnr
+
+# Calculate the patient-specific slopes by adding the fixed effect of age
+# to each patient's random effect for age
+fixed_slope <- fixef(full_model)["age"]
+patient_slopes <- fixed_slope + random_effects$age
+
+sorted_patient_slopes <- sort(patient_slopes, decreasing = TRUE)
+
+top_patients <- names(sorted_patient_slopes)[1:5]
+
+print(top_patients)
+print(sorted_patient_slopes[1:5])
+
+
+# Extract random effects for each patient and convert to a data frame
+random_effects <- as.data.frame(ranef(full_model)$patnr)
+
+# Add the fixed effect for age to each patient's random effect to get the patient-specific slopes
+fixed_slope <- fixef(full_model)["age"]
+random_effects$patient_slope <- fixed_slope + random_effects$age
+
+# Now add the patient IDs as a column if not already included
+random_effects$patnr <- rownames(random_effects)
+
+# Sort by patient-specific slope to get the patients with the biggest increases in diameter
+top_patients <- random_effects[order(-random_effects$patient_slope), ]
+
+# View the top 5 patients with the largest growth rates
+top_5_patients <- head(top_patients, 5)
+top_5_patients
+
+# View the last 5 pateitns with the slowerst growth rates
+bottom_5_patients <- tail(top_patients, 5)
+bottom_5_patients
+```
+
+Answers: 
+- the top five patiens with diameter increase per year are: 108 (1.584), 76(1.298), 157(1.247), 55(1.240) and 77(1.230)
+- the bottom five patients with diameter decrease per year are: 151(-0.28, only one measurement!), 123(-0.089), 95 (-0.034), 35(-0.010) and 2(0.01)
+
+## Predictions for new patients
+
+```{r}
+
+set.seed(42)
+
+# TODO plot that bitch
+# predictions for new entries of existing data
+sampled_data <- data[sample(nrow(data), 10), c("patnr", "age", "sexe")]
+
+sampled_data$age <- sampled_data$age + 1
+
+# Get predictions with confidence intervals for existing patients (including random effects)
+updated_patient_predictions <- predictInterval(
+  merMod = full_model,
+  newdata = sampled_data,
+  level = 0.95,               # Confidence level
+  n.sims = 1000,              # Number of simulations
+  which = "full"              # Full model including random effects
+)
+print(updated_patient_predictions)
+
+sampled_data$predicted <- updated_patient_predictions$fit        # Add predicted values
+sampled_data$lower_bound <- updated_patient_predictions$lwr     # Add lower bound of CI
+sampled_data$upper_bound <- updated_patient_predictions$upr
+
+# 5. Combine the original data and the modified data (new predictions)
+# Assuming the original data has 'patnr', 'age', and 'sexe' columns
+original_data <- data[, c("patnr", "age", "sexe")]
+original_data$predicted <- NA      # No predictions for the original data
+original_data$lower_bound <- NA    # No CI for the original data
+original_data$upper_bound <- NA    # No CI for the original data
+
+# Combine the original data with the modified sampled data
+combined_data <- rbind(original_data, sampled_data)
+
+# 6. Plot the original data and new predictions with confidence intervals
+# 6. Plot the original data and new predictions with confidence intervals
+ggplot(sampled_data, aes(x = age, group = patnr)) +
+  # Plot the new predictions for each patient as separate lines
+  geom_line(aes(y = predicted, color = as.factor(patnr)), size = 1) +
+  
+  # Add the confidence interval ribbon for each patient's prediction
+  geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound, fill = as.factor(patnr)), 
+              alpha = 0.2) +
+  
+  # Customize the plot
+  labs(x = "Age", y = "Predicted Diameter", 
+       title = "New Predictions with 95% Confidence Intervals for Each Patient") +
+  scale_color_manual(values = rainbow(length(unique(sampled_data$patnr)))) +
+  scale_fill_manual(values = rainbow(length(unique(sampled_data$patnr)))) +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+
+# Create new data frame for new patients without patnr (new patients)
+new_data <- data.frame(
+  age = seq(20, 80, by = 5),   # Sequence of ages
+  sexe = rep(1, 13),
+  patnr = rep(250, 13)# Assume all are male
+)
+
+# Get predictions with confidence intervals for new patients (fixed effects only)
+new_patient_predictions <- predictInterval(
+  merMod = full_model,
+  newdata = new_data,
+  level = 0.95,              # Confidence level for interval
+  n.sims = 1000,             # Number of simulations for interval estimation
+  which = "fixed"            # Fixed effects only, no random effects
+)
+
+print(new_patient_predictions)
+
+
+### Plotting
+
+library(ggplot2)
+# Create a sequence for the x-axis (e.g., age or any variable that corresponds to the rows)
+x_axis <- seq(20, 80, by = 5)  # Adjust as necessary
+
+# Add the x_axis to the result_df
+new_patient_predictions$x_axis <- x_axis
+
+# Plot the predicted values and the confidence intervals
+ggplot(new_patient_predictions, aes(x = x_axis)) +
+  geom_line(aes(y = fit), color = "blue", size = 1) +  # Predicted values
+  geom_ribbon(aes(ymin = upr, ymax = lwr), fill = "gray", alpha = 0.5) +  # Confidence interval
+  labs(x = "Age", y = "Predicted Diameter") +
+  theme_minimal() +
+  ggtitle("Predicted Values with 95% Confidence Interval")
+```
