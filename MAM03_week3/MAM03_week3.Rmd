@@ -43,6 +43,8 @@ predict next year’s aorta-diameter for the current patients
 ```{r pressure, echo=FALSE}
 # Basic descriptives
 n_pat <- length(unique(data$patnr))
+n_pat_female <- length(unique(subset(data, sexe == 0)$patnr))
+n_pat_male <- length(unique(subset(data, sexe == 1)$patnr))
 print(paste("Number of entries:", nrow(data)))
 print(paste("Number of unique patiens", n_pat))
 hist(data$metingnr, main=paste("number of the measurement mean:", mean(data$metingnr)))
@@ -90,20 +92,75 @@ print(paste("Average growth per year", mean(growths_per_year)))
 ```
 
 ## Check linearity of age and diameter
+
 ```{r}
 library(lme4)
 library(nlme)
 
+# spagetti plot ?
 plot(data$age, data$diameter, main = "Age vs Diameter")
 
 linear_model <- glm(diameter ~ age, data = data)
 summary(linear_model)
 #m1 <- lme(diameter ~ age, data=data)
 
-summary(m1)
+# fit a linear model
+model <- lm(diameter ~ age + sexe, data = data)
+# Plot residuals vs. fitted values
+plot(fitted(model), resid(model), 
+     xlab = "Fitted Values", 
+     ylab = "Residuals", 
+     main = "Residuals vs. Fitted Values")
+abline(h = 0, col = "red")
 ```
 
+Since there is no significant deviation with the increase of age we assume linearity 
+-> lmer is to be used
 
+## Random vs fixed effect explanation
+
+```{r}
+
+# Load necessary library
+library(lme4)
+
+# Example dataset (assume `data` exists with columns: diameter, age, sex, and group)
+# `diameter`: Diameter of the aorta (response)
+# `age`: Age of the individual (fixed effect)
+# `sex`: Sex of the individual (fixed effect)
+# `group`: Grouping variable (e.g., study center)
+
+# Fixed Intercept and Fixed Slope (no random effects)
+# Here, we assume the relationship between diameter, age, and sex is the same across all groups.
+model_fixed <- lm(diameter ~ age + sex, data = data)
+
+# Random Intercept Model
+# Each group gets its own intercept, but the slopes (effects of age and sex) are the same for all groups.
+model_random_intercept <- lmer(diameter ~ age + sex + (1 | group), data = data)
+
+# Explanation:
+# (1 | group): Adds a random intercept for each level of `group`.
+
+# Random Intercept and Random Slope Model
+# Each group gets its own intercept AND its own slope for `age`.
+model_random_intercept_slope <- lmer(diameter ~ age + sex + (1 + age | group), data = data)
+
+# Explanation:
+# (1 + age | group): Adds a random intercept AND a random slope for `age` within each `group`.
+
+# Random Slope Only (No Random Intercept)
+# Each group gets its own slope for `age`, but the intercept is fixed across groups.
+model_random_slope_only <- lmer(diameter ~ age + sex + (0 + age | group), data = data)
+
+# Explanation:
+# (0 + age | group): Adds only a random slope for `age` without a random intercept.
+
+# Fixed Effects Only
+# When random effects are unnecessary, you can use fixed effects alone.
+model_fixed_effects_only <- lmer(diameter ~ age + sex, data = data)
+
+```
+## creating the best model
 ```{r} 
 # baseline model, no predictor, just means
 baseline_model <- lmer(diameter ~ 1 + (1|patnr), data = data )
@@ -155,10 +212,63 @@ compare.fits(diameter ~ age | patnr, data = data, model1 = baseline_model, model
 
 Results: 
 - age should be modeled as random effect (age + (age|patnr))
-- sexe should be modeled as fixed effect (sexe + (1|sexe)) also sex does not vary within clusters so it has to be fixed
+- sexe should be modeled as fixed effect (sexe + (1|patnr)) also sex does not vary within clusters so it has to be fixed
 
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## see if splines improve the model
+```{r}
+library(splines)
+aics <- c()
+aicss <- c()
+
+for (fixed_spline in 1:5) {
+  for (random_spline in 1:5) {
+    formula <- paste("diameter ~ ns(age, df=", fixed_spline, ") + sexe + ( ns(age, df=", random_spline , ")|patnr)")
+    model <- lmer(formula, data = data)
+    aic <- AIC(model)
+    aics[[length(aics) + 1]] = c(aic, formula)
+  }
+}
+
+print(aics)
+min_tuple <- aics[[which.min(sapply(aics, function(x) x[1]))]]
+
+# bes model according to this: 
+# "4822.16353576645"    "diameter ~ ns(age, df= 4 ) + sexe + ( ns(age, df= 5 )|patnr)"
+
+
+best_splines_model <- lmer(diameter ~ ns(age, df= 4 ) + sexe + ( ns(age, df= 5 )|patnr), data = data)
+plot(fitted(best_splines_model), resid(best_splines_model), 
+     xlab = "Fitted Values", 
+     ylab = "Residuals", 
+     main = "Residuals vs. Fitted Values")
+abline(h = 0, col = "red")
+
+
+# m0_ns <- lmer(diameter ~ ns(age, df=4) * sexe + (1+age|patnr), data=dat)
+
+AIC(best_splines_model)
+
+age_seq <- seq(min(data$age), max(data$age), by=0.1)  # adjust step size for smoother lines
+new_data <- expand.grid(age = age_seq, sexe = c(0, 1))
+
+new_data$pred_diameter <- predict(best_splines_model, newdata=new_data, re.form=NA)
+
+library(ggplot2)
+ggplot(data, aes(x=age, y=diameter)) +
+  # original data points in gray
+  geom_point(colour = "gray") +
+  
+  geom_line(data=new_data, aes(x=age, y=pred_diameter, colour=as.factor(sexe)), size=1.2) +
+  scale_colour_manual(values = c("0" = "salmon", "1" = "palegreen3"), 
+                      labels = c("Female", "Male"), 
+                      name = "Sex") +
+  labs(x = "Age", y = "Diameter", title = "diameter ~ ns(age, df= 4 ) + sexe + ( ns(age, df= 5 )|patnr)") #+
+#  theme_minimal() +
+#  theme(legend.position = "right")
+```
 
 
 ## Model with both variables
