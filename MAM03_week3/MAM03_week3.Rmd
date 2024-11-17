@@ -51,6 +51,7 @@ hist(data$metingnr, main=paste("number of the measurement mean:", mean(data$meti
 hist(data$diameter, main=paste("diameter of the aortas mean:", mean(data$diameter)))
 hist(data$age, main=paste("Age mean:", mean(data$age) ))
 
+# TODO this has to be fixed
 # missing values
 print(sum(is.na(data$column_name)))
 # number of encounters per patient
@@ -60,6 +61,55 @@ for (row in 1:nrow(data)) {
   n_pat_encounters[patnr] <- n_pat_encounters[patnr] +1
 }
 hist(n_pat_encounters, main="encounters per patient")
+mean(n_pat_encounters)
+sd(n_pat_encounters)
+max(n_pat_encounters)
+min(n_pat_encounters)
+
+# males
+print("male encounters")
+# number of encounters per patient
+n_pat_male_encounters <- seq(0,0,length.out=n_pat_male)
+i <- 0
+last_patrn <- 0
+males <- subset(data, sexe == 1)
+for (row in 1:nrow(males)) {
+  patnr <- males[row, "patnr"]
+  if (patnr != last_patnr) {
+    # new patient
+    i <- i+1
+    last_patnr <- patnr
+  }
+  n_pat_male_encounters[i] <- n_pat_male_encounters[i] +1
+}
+hist(n_pat_male_encounters, main="encounters per male patient")
+mean(n_pat_male_encounters)
+sd(n_pat_male_encounters)
+max(n_pat_male_encounters)
+min(n_pat_male_encounters)
+
+
+
+# females
+print("female encounters")
+n_pat_female_encounters <- seq(0,0,length.out=n_pat_female)
+females <- subset(data, sexe == 0)
+i <- 0
+last_patrn <- 0
+for (row in 1:nrow(females)) {
+  patnr <- females[row, "patnr"]
+  if (patnr != last_patnr) {
+    # new patient
+    i <- i+1
+    last_patnr <- patnr
+  }
+  n_pat_female_encounters[i] <- n_pat_female_encounters[i] +1
+}
+hist(n_pat_female_encounters, main="encounters per female patient")
+mean(n_pat_female_encounters)
+sd(n_pat_female_encounters)
+max(n_pat_female_encounters)
+min(n_pat_female_encounters)
 
 # average growth rate per year. 
 # they are sorted per patientnr
@@ -132,32 +182,32 @@ library(lme4)
 
 # Fixed Intercept and Fixed Slope (no random effects)
 # Here, we assume the relationship between diameter, age, and sex is the same across all groups.
-model_fixed <- lm(diameter ~ age + sex, data = data)
+model_fixed <- lm(diameter ~ age + sexe, data = data)
 
 # Random Intercept Model
 # Each group gets its own intercept, but the slopes (effects of age and sex) are the same for all groups.
-model_random_intercept <- lmer(diameter ~ age + sex + (1 | group), data = data)
+model_random_intercept <- lmer(diameter ~ age + sexe + (1 | patnr), data = data)
 
 # Explanation:
 # (1 | group): Adds a random intercept for each level of `group`.
 
 # Random Intercept and Random Slope Model
 # Each group gets its own intercept AND its own slope for `age`.
-model_random_intercept_slope <- lmer(diameter ~ age + sex + (1 + age | group), data = data)
+model_random_intercept_slope <- lmer(diameter ~ age + sexe + (1 + age | patnr), data = data)
 
 # Explanation:
 # (1 + age | group): Adds a random intercept AND a random slope for `age` within each `group`.
 
 # Random Slope Only (No Random Intercept)
 # Each group gets its own slope for `age`, but the intercept is fixed across groups.
-model_random_slope_only <- lmer(diameter ~ age + sex + (0 + age | group), data = data)
+model_random_slope_only <- lmer(diameter ~ age + sexe + (0 + age | patnr), data = data)
 
 # Explanation:
 # (0 + age | group): Adds only a random slope for `age` without a random intercept.
 
 # Fixed Effects Only
 # When random effects are unnecessary, you can use fixed effects alone.
-model_fixed_effects_only <- lmer(diameter ~ age + sex, data = data)
+#model_fixed_effects_only <- lmer(diameter ~ age + sexe, data = data)
 
 ```
 ## creating the best model
@@ -238,9 +288,12 @@ min_tuple <- aics[[which.min(sapply(aics, function(x) x[1]))]]
 # bes model according to this: 
 # "4822.16353576645"    "diameter ~ ns(age, df= 4 ) + sexe + ( ns(age, df= 5 )|patnr)"
 
+```
+## best model
 
-best_splines_model <- lmer(diameter ~ ns(age, df= 4 ) + sexe + ( ns(age, df= 5 )|patnr), data = data)
-plot(fitted(best_splines_model), resid(best_splines_model), 
+```{r}
+best_model <- lmer(diameter ~ age + sexe + (age|patnr), data = data)
+plot(fitted(best_model), resid(best_model), 
      xlab = "Fitted Values", 
      ylab = "Residuals", 
      main = "Residuals vs. Fitted Values")
@@ -249,12 +302,12 @@ abline(h = 0, col = "red")
 
 # m0_ns <- lmer(diameter ~ ns(age, df=4) * sexe + (1+age|patnr), data=dat)
 
-AIC(best_splines_model)
+best_aic <- AIC(best_model)
 
 age_seq <- seq(min(data$age), max(data$age), by=0.1)  # adjust step size for smoother lines
 new_data <- expand.grid(age = age_seq, sexe = c(0, 1))
 
-new_data$pred_diameter <- predict(best_splines_model, newdata=new_data, re.form=NA)
+new_data$pred_diameter <- predict(best_model, newdata=new_data, re.form=NA)
 
 library(ggplot2)
 ggplot(data, aes(x=age, y=diameter)) +
@@ -265,9 +318,11 @@ ggplot(data, aes(x=age, y=diameter)) +
   scale_colour_manual(values = c("0" = "salmon", "1" = "palegreen3"), 
                       labels = c("Female", "Male"), 
                       name = "Sex") +
-  labs(x = "Age", y = "Diameter", title = "diameter ~ ns(age, df= 4 ) + sexe + ( ns(age, df= 5 )|patnr)") #+
+  labs(x = "Age", y = "Diameter", title = paste("Final model: diameter ~ age + sexe + (age|patnr) \n AIC:", round(best_aic, 2))) #+
 #  theme_minimal() +
 #  theme(legend.position = "right")
+
+summary(best_model)
 ```
 
 
@@ -275,13 +330,18 @@ ggplot(data, aes(x=age, y=diameter)) +
 ```{r}
 
 full_model <- lmer(diameter ~ age + sexe + (age|patnr), data = data)
+# 
+spl_model <- lmer(diameter ~ ns(age, df= 4 ) + sexe + ( ns(age, df= 5 )|patnr), data = data)
 
-model.comparison(full_model, age_model)
+
+model.comparison(spl_model, full_model)
 
 # Full model is significantly better based on AIC and bayes factor
 
-compare.fits(diameter~ age | sexe + patnr, data=data, model1=age_model, model2=full_model)
-
+# compare.fits(diameter~ age | sexe + patnr, data=data, model1=age_model, model2=full_model)
+print("###### spl model ######")
+summary(spl_model)
+print("###### full model ######")
 summary(full_model)
 # the average diameter for someone of average age and sex
 # 27.18633 every year on average increases the diameter by 0.39761
@@ -357,61 +417,65 @@ Answers:
 ```{r}
 
 set.seed(42)
+library(dplyr)
+library(merTools)
+# get 10 random patients
+sampled_patients <- sample(unique(data$patnr), 10)
 
-# TODO plot that bitch
-# predictions for new entries of existing data
-sampled_data <- data[sample(nrow(data), 10), c("patnr", "age", "sexe")]
+# 2. Extract the latest data point for these patients
+latest_data <- data %>%
+  filter(patnr %in% sampled_patients) %>%
+  group_by(patnr) %>%
+  slice_max(order_by = age, n = 1)
 
-sampled_data$age <- sampled_data$age + 1
+new_data <- latest_data %>%
+  mutate(age = age + 1)
 
 # Get predictions with confidence intervals for existing patients (including random effects)
-updated_patient_predictions <- predictInterval(
+predictions <- predictInterval(
   merMod = full_model,
   newdata = sampled_data,
   level = 0.95,               # Confidence level
   n.sims = 1000,              # Number of simulations
   which = "full"              # Full model including random effects
 )
-print(updated_patient_predictions)
 
-sampled_data$predicted <- updated_patient_predictions$fit        # Add predicted values
-sampled_data$lower_bound <- updated_patient_predictions$lwr     # Add lower bound of CI
-sampled_data$upper_bound <- updated_patient_predictions$upr
-
-# 5. Combine the original data and the modified data (new predictions)
-# Assuming the original data has 'patnr', 'age', and 'sexe' columns
-original_data <- data[, c("patnr", "age", "sexe")]
-original_data$predicted <- NA      # No predictions for the original data
-original_data$lower_bound <- NA    # No CI for the original data
-original_data$upper_bound <- NA    # No CI for the original data
-
-# Combine the original data with the modified sampled data
-combined_data <- rbind(original_data, sampled_data)
-
-# 6. Plot the original data and new predictions with confidence intervals
-# 6. Plot the original data and new predictions with confidence intervals
-ggplot(sampled_data, aes(x = age, group = patnr)) +
-  # Plot the new predictions for each patient as separate lines
-  geom_line(aes(y = predicted, color = as.factor(patnr)), size = 1) +
-  
-  # Add the confidence interval ribbon for each patient's prediction
-  geom_ribbon(aes(ymin = lower_bound, ymax = upper_bound, fill = as.factor(patnr)), 
-              alpha = 0.2) +
-  
-  # Customize the plot
-  labs(x = "Age", y = "Predicted Diameter", 
-       title = "New Predictions with 95% Confidence Intervals for Each Patient") +
-  scale_color_manual(values = rainbow(length(unique(sampled_data$patnr)))) +
-  scale_fill_manual(values = rainbow(length(unique(sampled_data$patnr)))) +
-  theme_minimal() +
-  theme(legend.title = element_blank())
+# Add predictions and confidence intervals to the new_data
+new_data <- new_data %>%
+  mutate(
+    fit = predictions$fit,
+    lwr = predictions$lwr,
+    upr = predictions$upr,
+    is_new = TRUE  # Mark these as new predictions
+  )
 
 
+# 5. Combine old data and new predictions
+combined_data <- data %>%
+  filter(patnr %in% sampled_patients) %>%  # Keep only sampled patients
+  mutate(is_new = FALSE) %>%               # Mark old data as not new
+  bind_rows(new_data)                      # Combine with new predictions
+
+
+# 6. Plot the data
+ggplot(combined_data, aes(x = age, y = aorta_diameter, color = as.factor(patnr))) +
+  geom_point(aes(shape = is_new), size = 3) +  # Different shapes for new/old points
+  geom_line() +
+  geom_errorbar(data = new_data, aes(ymin = lwr, ymax = upr), width = 0.2) +  # CI for new predictions
+  labs(title = "Aorta Diameter Predictions with Confidence Intervals",
+       x = "Age (years)", y = "Aorta Diameter (mm)",
+       color = "Patient ID", shape = "New Prediction") +
+  theme_minimal()
+
+```
+## New patients
+
+```{r}
 # Create new data frame for new patients without patnr (new patients)
 new_data <- data.frame(
-  age = seq(20, 80, by = 5),   # Sequence of ages
-  sexe = rep(1, 13),
-  patnr = rep(250, 13)# Assume all are male
+  age = c(seq(20, 80, by = 5), seq(20, 80, by = 5)),   # Sequence of ages
+  sexe = c(rep(1, 13), rep(0,13)),
+  patnr = rep(250, 26)
 )
 
 # Get predictions with confidence intervals for new patients (fixed effects only)
@@ -434,6 +498,7 @@ x_axis <- seq(20, 80, by = 5)  # Adjust as necessary
 
 # Add the x_axis to the result_df
 new_patient_predictions$x_axis <- x_axis
+new_patient_predictions$sexe <- new_data$sexe
 
 # Plot the predicted values and the confidence intervals
 ggplot(new_patient_predictions, aes(x = x_axis)) +
@@ -442,4 +507,12 @@ ggplot(new_patient_predictions, aes(x = x_axis)) +
   labs(x = "Age", y = "Predicted Diameter") +
   theme_minimal() +
   ggtitle("Predicted Values with 95% Confidence Interval")
+
+ggplot(new_patient_predictions, aes(x = x_axis, y = fit, color = as.factor(sexe))) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr, fill = as.factor(sexe), group = sexe), alpha = 0.2) +
+  labs(title = "Expected Aorta Diameter for New Patients",
+       x = "Age (years)", y = "Aorta Diameter (mm)",
+       color = "Gender", fill = "Gender") +
+  theme_minimal()
 ```
