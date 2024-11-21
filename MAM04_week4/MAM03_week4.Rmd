@@ -1,0 +1,74 @@
+---
+title: 'week 4 assignment: predictive value of repeated measures for graft and patient failure'
+author: "Robin Manz, Matias Tolppanen"
+date: "2024-11-21"
+output: html_notebook
+---
+
+## Setup 
+
+```{r setup}
+# load librarys
+
+```
+## Loaddata
+
+```{r}
+load(file="kidney_transplant.RData")
+ls()
+
+```
+## Descriptives
+the object "d" contains data of 838 patients who received a kidney transplant for end-stage renal failure and contains 40 columns, including
+
+| column | description | 
+| --- | --- | 
+| ID | patient ID number (1,2,3,...,838) |
+| time_to_graft_failure | years from transplantation till date of graft failure |
+| time_to_death | years from transplantation till date of death |
+| stat_pat  | 1/0 (1 = patient died; 0 = patient is alive at last followup) |
+| stat_gra |  1/0 (1 = graft failed; 0 = graft still functioning at last fup) | 
+| --- |--- | 
+| sex_pat | 1 female, 2= male | 
+| age_at_tx | age at transplatation in years | 
+| type_dia | dialysis type: CAPD, geen_dialyse, Hemodialyse centrum, Hemodialyse thuis |
+| duur_dia | Dialysis duration Time, Integer |
+| bmi | float BMI | 
+| sexdon | Sex of Donor (1 = female, 2 = male) | 
+| agedon | Age of Donor, Integer | 
+| retrans | Transplatiation type (0 = first transplatation, 1 = retransplantation) | 
+| gfr(1-7) | time dependeant, gluomerular filtration rate | 
+| screat(1-7) | time dependeant, createnine levels | 
+| map(1-7) | time dependeant, mid arterial pressure | 
+| (Time periods) | 3m, 6m, 1y, 2y, 5y, 10y, 15y | 
+
+ The object "dlong" contains the same data but each patient is now represented by seven records, one for each repeated measure.
+ 
+ 
+ **Question**: The general aim of the assignment is to develop dynamic prediction models for graft failure and death using both the baseline characteristics and the repeatedly measured covariates.
+Use both Cox regression models including the time-dependent covariates gfr, screat and map and joint Cox-lme models with the same data. Discuss the different assumptions involved.
+
+## Descriptives 
+```{r}
+# Basic numbers
+n_entries <- nrow(d)
+print(paste("Number of entreies", n_entries))
+n_graft_rejection <- nrow(subset(d, stat_gra == 1))
+print(paste("Number of Graft_rejections", n_graft_rejection))
+n_died <- nrow(subset(d, stat_pat == 1))
+print(paste("Number of Deaths", n_died))
+
+
+# histograms of continuous variables
+hist(d$age_at_tx, main="Age at transplanation")
+hist(d$duur_dia, main="Duration of dialysis")
+hist(d$bmi, breaks=20, main="BMI")
+hist(d$agedon, main="Age of Donor")
+
+```
+
+
+
+
+
+## Kaplan meier 
