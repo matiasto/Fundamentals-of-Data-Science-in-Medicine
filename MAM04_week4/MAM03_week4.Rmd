@@ -9,7 +9,10 @@ output: html_notebook
 
 ```{r setup}
 # load librarys
-
+library(ggplot2)
+library(survival)
+library(nlme)
+library(JM)
 ```
 ## Loaddata
 
@@ -52,10 +55,17 @@ Use both Cox regression models including the time-dependent covariates gfr, scre
 ```{r}
 # Basic numbers
 n_entries <- nrow(d)
-print(paste("Number of entreies", n_entries))
-n_graft_rejection <- nrow(subset(d, stat_gra == 1))
+n_f <- nrow(subset(d, sex_pat == "female"))
+n_m <- nrow(subset(d, sex_pat == "male"))
+
+print(paste("Total patients:", n_entries, "female:", n_f, ", male:", n_m))
+sapply(d, function(x) sum(is.na(x)))
+
+
+print(paste("Number of entries", n_entries))
+n_graft_rejection <- nrow(subset(d, stat_gra == "Graft loss"))
 print(paste("Number of Graft_rejections", n_graft_rejection))
-n_died <- nrow(subset(d, stat_pat == 1))
+n_died <- nrow(subset(d, stat_pat == "overleden"))
 print(paste("Number of Deaths", n_died))
 
 
@@ -65,10 +75,176 @@ hist(d$duur_dia, main="Duration of dialysis")
 hist(d$bmi, breaks=20, main="BMI")
 hist(d$agedon, main="Age of Donor")
 
+# creat, gfr, map
+hist(dlong$creat, main="Histogram for Creat")
+creat_mean <- mean(dlong$creat ,na.rm = TRUE)
+creat_sd <- sd(dlong$creat, na.rm = TRUE)
+creat_min <- min(dlong$creat, na.rm = TRUE)
+creat_max <- max(dlong$creat, na.rm = TRUE)
+print(paste("Createnine mean:", round(creat_mean, 2), "(SD =", round(creat_sd, 2), "), min =", round(creat_min, 2), ", max = ", round(creat_max, 2)))
+# gfr
+hist(dlong$gfr, main="Histogram for gfr")
+gfr_mean <- mean(dlong$gfr, na.rm = TRUE)
+gfr_sd<-sd(dlong$gfr, na.rm = TRUE)
+gfr_min<-min(dlong$gfr, na.rm = TRUE)
+gfr_max<-max(dlong$gfr, na.rm = TRUE)
+print(paste("Gfr mean:", round(gfr_mean, 2), "(SD =", round(gfr_sd, 2), "), min =", round(gfr_min, 2), ", max = ", round(gfr_max, 2)))
+# map
+hist(dlong$map, main="Histogram for map")
+map_mean<-mean(dlong$map, na.rm = TRUE)
+map_sd<-sd(dlong$map, na.rm = TRUE)
+map_min<-min(dlong$map, na.rm = TRUE)
+map_max<-max(dlong$map, na.rm = TRUE)
+print(paste("map mean:", round(map_mean, 2), "(SD =", round(map_sd, 2), "), min =", round(map_min, 2), ", max = ", round(map_max)))
+
+
 ```
+## add start and stop to the dlong for processing
+```{r}
+# really bad appriach i know ....
+# create start and stop events in the dataset
+start <- numeric(nrow(dlong))
+stop <- numeric(nrow(dlong))
+counter = 1
+for (row in 1:nrow(dlong)) {
+  if (counter == 8) {
+    counter <- 1
+  }
+  if (counter == 1) {
+    # new patient start = 0
+    start[row] <- 0 
+    print(dlong[row, "years"])
+    stop[row] <- dlong[row, "years"] 
+  } else {
+    # existing patient start = last stop
+    start[row] <- stop[row - 1]
+    print(dlong[row, "years"])
+    stop[row] <- dlong[row, "years"]
+  }
+  counter <- counter + 1
+}
+dlong$start <- start
+dlong$stop <- stop
 
 
+```
+## Kaplan meier for graft rejection 
+
+````{r}
+
+Y <- Surv(time = d$time_to_graft_failure, event = d$stat_gra == "Graft loss")
+summary(Y)
+
+# plot the Surv time
+plot(Y, lty = c("solid", "dashed", "dashed"), col = c("black", "grey", "grey"), xlab = "Survival Time In Years", ylab = "Graft rejection probabilities for all patients", main="Kaplan-Meier Curve")
 
 
+```
+## Preprocessing , checking assumptions etc. 
 
-## Kaplan meier 
+```{r}
+# get subset of only graft rejected patients
+d_graft_loss <- subset(d, stat_gra == "Graft loss")
+
+# check for linearity and proportionality
+# check for linearity with psplines splines for each continuous variable
+cox_m <- coxph(Surv(time = d$time_to_graft_failure, event = d$stat_gra == "Graft loss") ~ sex_pat + pspline(age_at_tx) + type_dia + pspline(duur_dia) + pspline(bmi) + sexdon + pspline(agedon) + retrans,  data = d, x = TRUE)
+summary(cox_m)
+# all variables are linear
+
+# check for proportionality multivariate model
+cox_p <- coxph(Surv(time = d$time_to_graft_failure, event = d$stat_gra == "Graft loss") ~ sex_pat + age_at_tx + type_dia + duur_dia + bmi + sexdon + agedon + retrans,  data = d, x = TRUE)
+summary(cox_p)
+cox_zph=cox.zph(cox_p)
+plot(cox_zph[1])
+plot(cox_zph[2])
+plot(cox_zph[3])
+plot(cox_zph[4])
+plot(cox_zph[5])
+plot(cox_zph[6])
+plot(cox_zph[7])
+plot(cox_zph[8])
+print(cox_zph)
+
+# TODO check univariate?
+
+# Univariate check for predictive power
+print("##################Death ####################")
+# variable selection for death
+summary(coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~sex_pat,data=d))
+summary(coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~age_at_tx,data=d))
+summary(coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~bmi,data=d))
+summary(coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~sexdon,data=d))
+summary(coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~agedon,data=d))
+summary(coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~type_dia,data=d))
+summary(coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~duur_dia,data=d))
+summary(coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~retrans,data=d))
+
+print("############### Graft failure ################")
+# variable selection for graft failire
+summary(coxph(Surv(time_to_graft_failure,as.numeric(stat_gra)-1)~sex_pat,data=d))
+summary(coxph(Surv(time_to_graft_failure,as.numeric(stat_gra)-1)~age_at_tx,data=d))
+summary(coxph(Surv(time_to_graft_failure,as.numeric(stat_gra)-1)~bmi,data=d))
+summary(coxph(Surv(time_to_graft_failure,as.numeric(stat_gra)-1)~sexdon,data=d))
+summary(coxph(Surv(time_to_graft_failure,as.numeric(stat_gra)-1)~agedon,data=d))
+summary(coxph(Surv(time_to_graft_failure,as.numeric(stat_gra)-1)~type_dia,data=d))
+summary(coxph(Surv(time_to_graft_failure,as.numeric(stat_gra)-1)~duur_dia,data=d))
+summary(coxph(Surv(time_to_graft_failure,as.numeric(stat_gra)-1)~retrans,data=d))
+
+
+```
+## cox cph Graft rejection variables
+sig: age_at_tx (2.6e-10), agedon (6.53e-05),  type_dia (cebtrzm, 0.0198), 
+non-sig: sex_pat(close 0.0556), bmi, sexdon, duur_dia, retrans
+
+## coxacph Death variables
+significant predictors: 
+- duur_dia (0.000423), agedon (0.00998),  age_at_tx (<2e-16), type_diaHemodialyse centrum (0.00929 )
+non-significant: sex_pat, retrans, sexdon, bmi
+
+
+## create linear mixed effect model 
+```{r}
+lme_creat_model <- lme(creat ~ gfr + creat + map + sex_pat + age_at_tx + bmi + type_dia+ duur_dia + sexdon + agedon + retrans, data = dlong)
+
+
+# baseline_model <- lmer(diameter ~ 1 + (1|patnr), data = data )
+```
+## Check for linarity using pslines:
+significant for linear: 
+- age_at_tx
+- duur_dia
+- bmi
+- agedon
+
+## Proportionality 
+- sex_pat ok, -1 < x <1
+- age_at_tx ok, -0.1 < x < 0.1
+- type_dia p-values says ok, (proportionality violated)
+- duur_dia ok
+- bmi ok
+- sex_don not ok
+- age_don ok
+- retrans ok
+
+
+## Cox models
+```{r}
+# cox model greaft failure
+m1 <- coxph(Surv(time_to_graft_failure, as.numeric(stat_gra)-1) ~ age_at_tx + type_dia + agedon,data = d, x = TRUE)
+
+# for death
+m1 <- coxph(Surv(time_to_death,as.numeric(stat_pat)-1)~ age_at_tx + agedon + type_dia +
+         duur_dia , data=d, x=TRUE)
+
+m1
+# lme model
+s1 <- 
+```
+  
+## Joint model Cox-lme for graft failure 
+```{r}
+# joint model
+j1 <- jointModel(s2, m1, timeVar = "obstime")
+
+```
