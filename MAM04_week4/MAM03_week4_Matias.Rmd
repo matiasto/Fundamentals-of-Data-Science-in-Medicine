@@ -1,0 +1,513 @@
+---
+title: 'Week 3 assignment: Predictive value of repeated measures for graft and patient failure'
+author: "Robin Manz, Matias Tolppanen"
+date: "2024-11-22"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(nlme)
+library(survival)
+library(JM)
+library(ggpubr)
+library(mice)
+library(VIM)
+library(e1071)
+library(dplyr)
+library(tidyr)
+library(gridExtra)
+
+```
+
+```{r}
+load('kidney transplant.RData')
+ls()
+```
+
+Data description and exploration
+
+```{r}
+str(d)
+str(dlong)
+
+summary(d)
+summary(dlong)
+
+sapply(d, class)
+sapply(dlong, class)
+```
+
+There seems to be outliers on gfr and creat that are clinically impossible. Let's investigate.
+
+```{r}
+limits <- list(
+  gfr = c(0, 150),
+  creat = c(0, 750),
+  map = c(0, 170)
+)
+
+
+# Create a function to detect and remove outliers
+handle_outliers <- function(data, variable, limits) {
+  lower_limit <- limits[1]
+  upper_limit <- limits[2]
+  
+  outliers <- which(data[[variable]] < lower_limit | data[[variable]] > upper_limit)
+  n_outliers <- length(outliers)
+  
+  cat(sprintf("Variable '%s': %d outliers detected (outside [%g, %g])\n", 
+              variable, n_outliers, lower_limit, upper_limit))
+  
+  if (n_outliers > 0) {
+    data <- data[-outliers, ]
+  }
+  
+  return(data)
+}
+
+continuous_vars <- c("gfr", "creat", "map")
+for (var in continuous_vars) {
+  dlong <- handle_outliers(dlong, var, limits[[var]])
+}
+
+cat("\nSummary of cleaned variables:\n")
+summary(dlong[, continuous_vars])
+```
+
+Missing data
+
+```{r}
+aggr_plot <- aggr(d, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE,
+                  labels=names(d), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+aggr_plot_long <- aggr(dlong, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE,
+                       labels=names(dlong), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+# Proportion of missing data
+colSums(is.na(d)) / nrow(d)
+colSums(is.na(dlong)) / nrow(dlong)
+
+```
+
+missingness seems random and minimal/non-significant. For many of the measurements we can expect high missigness due to the nature of that data. We shall proceed with complete-case analysis
+
+```{r}
+# Variables to explore
+baseline_vars <- c('sex_pat', 'age_at_tx', 'type_dia', 'duur_dia', 'bmi', 'sexdon', 'agedon', 'retrans')
+
+
+d %>% ggplot(aes(x = age_at_tx)) + 
+  geom_histogram(binwidth = 5, fill = 'blue', color = 'black') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of Age at Transplantation', x = 'Age', y = 'Count')
+
+d %>% ggplot(aes(x = bmi)) + 
+  geom_histogram(binwidth = 1, fill = 'green', color = 'black') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of BMI', x = 'BMI', y = 'Count')
+
+d %>% ggplot(aes(x = duur_dia)) + 
+  geom_histogram(binwidth = 5, fill = 'red', color = 'black') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of Duration of Dialysis', x = 'Duration (months)', y = 'Count')
+
+d %>% ggplot(aes(x = sex_pat)) + 
+  geom_bar(fill = 'orange') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of Patient Sex', x = 'Sex', y = 'Count')
+
+d %>% ggplot(aes(x = type_dia)) + 
+  geom_bar(fill = 'purple') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of Dialysis Type', x = 'Type of Dialysis', y = 'Count')
+
+d %>% ggplot(aes(x = sexdon)) + 
+  geom_bar(fill = 'cyan') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of Donor Sex', x = 'Sex', y = 'Count')
+
+d %>% ggplot(aes(x = factor(retrans))) + 
+  geom_bar(fill = 'pink') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of Re-transplantation', x = 'Re-transplantation (1=Yes, 0=No)', y = 'Count')
+
+## Outcome Variables
+d %>% ggplot(aes(x = stat_gra)) + 
+  geom_bar(fill = 'gray') + 
+  theme_minimal() + 
+  labs(title = 'Graft Failure Status', x = 'Graft Status', y = 'Count')
+
+d %>% ggplot(aes(x = stat_pat)) + 
+  geom_bar(fill = 'brown') + 
+  theme_minimal() + 
+  labs(title = 'Patient Survival Status', x = 'Patient Status', y = 'Count')
+
+d %>% ggplot(aes(x = time_to_graft_failure)) + 
+  geom_histogram(binwidth = 1, fill = 'steelblue', color = 'black') + 
+  theme_minimal() + 
+  labs(title = 'Time to Graft Failure', x = 'Years', y = 'Count')
+
+d %>% ggplot(aes(x = time_to_death)) + 
+  geom_histogram(binwidth = 1, fill = 'darkgreen', color = 'black') + 
+  theme_minimal() + 
+  labs(title = 'Time to Death', x = 'Years', y = 'Count')
+
+
+dlong %>% ggplot(aes(x = gfr)) + 
+  geom_histogram(binwidth = 5, fill = 'lightblue', color = 'black') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of GFR', x = 'GFR', y = 'Count')
+
+dlong %>% ggplot(aes(x = creat)) + 
+  geom_histogram(binwidth = 10, fill = 'lightgreen', color = 'black') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of Creatinine', x = 'Creatinine', y = 'Count')
+
+dlong %>% ggplot(aes(x = map)) + 
+  geom_histogram(binwidth = 5, fill = 'lightpink', color = 'black') + 
+  theme_minimal() + 
+  labs(title = 'Distribution of MAP', x = 'Mean Arterial Pressure', y = 'Count')
+
+dlong %>% ggplot(aes(x = years, y = gfr)) + 
+  geom_point(alpha = 0.3) + 
+  geom_smooth(method = 'loess') +
+  theme_minimal() + 
+  labs(title = 'GFR over Time', x = 'Years since Transplantation', y = 'GFR')
+
+dlong %>% ggplot(aes(x = years, y = creat)) + 
+  geom_point(alpha = 0.3) + 
+  geom_smooth(method = 'loess') +
+  theme_minimal() + 
+  labs(title = 'Creatinine over Time', x = 'Years since Transplantation', y = 'Creatinine')
+
+dlong %>% ggplot(aes(x = years, y = map)) + 
+  geom_point(alpha = 0.3) + 
+  geom_smooth(method = 'loess') +
+  theme_minimal() + 
+  labs(title = 'MAP over Time', x = 'Years since Transplantation', y = 'Mean Arterial Pressure')
+```
+
+### Distribution Checks for Continuous Variables
+
+```{r}
+# List of continuous variables
+continuous_vars <- c('gfr', 'creat', 'map')
+
+# Histograms for 'dlong' continuous variables
+# List of continuous variables
+continuous_vars <- c('gfr', 'creat', 'map')
+
+# Histograms for 'dlong' continuous variables
+for (var in continuous_vars) {
+  print(
+    ggplot(dlong, aes_string(x = var)) +
+      geom_histogram(binwidth = 5, fill = 'blue', color = 'black', na.rm = TRUE) +
+      theme_minimal() +
+      labs(title = paste('Distribution of', var), x = var, y = 'Count') +
+      geom_vline(xintercept = mean(dlong[[var]], na.rm = TRUE), color = 'red', linetype = 'dashed') +
+      theme(plot.title = element_text(hjust = 0.5))
+  )
+}
+
+
+# Boxplots for 'dlong' continuous variables
+for (var in continuous_vars) {
+  print(
+    ggplot(dlong, aes_string(y = var)) +
+      geom_boxplot(fill = 'orange', color = 'black', na.rm = TRUE) +
+      theme_minimal() +
+      labs(title = paste('Boxplot of', var), y = var) +
+      theme(plot.title = element_text(hjust = 0.5))
+  )
+  print(
+    ggplot(dlong, aes_string(sample=var)) +
+      stat_qq() +
+      stat_qq_line() +
+      labs(title = paste('Q-Q Plot of', var), y = var)
+  )
+}
+
+
+```
+
+Based on the graphs, I think creat would definetely benefit from log transform.
+
+For completeness, let's check skeweness numerically
+
+```{r, warning=FALSE}
+for (var in continuous_vars) {
+  skewness_value <- skewness(dlong[[var]], na.rm = TRUE)
+  cat(paste('Skewness of', var, ':', round(skewness_value, 2)), '\n')
+}
+```
+
+Creat definitely needs log transform.
+
+```{r, warning=FALSE}
+ggplot(dlong, aes(x = creat)) +
+  geom_histogram(binwidth = 10, fill = 'blue', color = 'black') +
+  theme_minimal() +
+  labs(title = 'Creatinine Before Transformation', x = 'Creatinine', y = 'Count')
+
+# Apply log transformation
+dlong <- dlong %>% mutate(creat = log(creat))
+
+# Histogram after transformation
+ggplot(dlong, aes(x = creat)) +
+  geom_histogram(binwidth = 0.1, fill = 'green', color = 'black') +
+  theme_minimal() +
+  labs(title = 'Creatinine After Log Transformation', x = 'Log(Creatinine)', y = 'Count')
+```
+
+Way better.
+
+### Next well choose the best **linear xixed-effects models**
+
+```{r, warning=FALSE}
+lme_gfr_intercept <- lme(gfr ~ years, data = dlong, random = ~ 1 | ID, na.action = na.exclude)
+summary(lme_gfr_intercept)
+
+```
+
+```{r}
+lme_gfr_slope <- lme(gfr ~ years, data = dlong, random = ~ years | ID, na.action = na.exclude)
+summary(lme_gfr_slope)
+
+```
+
+Comparing using aic and bic
+
+```{r}
+gfr_model_comparison <- data.frame(
+  Model = c("Random Intercept", "Random Intercept + Slope"),
+  AIC = c(AIC(lme_gfr_intercept), AIC(lme_gfr_slope)),
+  BIC = c(BIC(lme_gfr_intercept), BIC(lme_gfr_slope))
+)
+gfr_model_comparison
+
+anova(lme_gfr_intercept, lme_gfr_slope)
+
+```
+
+Random Intercept + Slope + Quadratic seems best.
+
+### Creat lme
+
+```{r, warning=FALSE}
+lme_creat_intercept <- lme(creat ~ years, data = dlong, random = ~ 1 | ID, na.action = na.exclude)
+summary(lme_creat_intercept)
+
+
+```
+
+```{r}
+lme_creat_slope <- lme(creat ~ years, data = dlong, random = ~ years | ID, na.action = na.exclude)
+summary(lme_creat_slope)
+
+```
+
+```{r}
+creat_model_comparison <- data.frame(
+  Model = c("Random Intercept", "Random Intercept + Slope"),
+  AIC = c(AIC(lme_creat_intercept), AIC(lme_creat_slope)),
+  BIC = c(BIC(lme_creat_intercept), BIC(lme_creat_slope))
+)
+creat_model_comparison
+
+anova(lme_creat_intercept, lme_creat_slope)
+
+```
+
++:------------------------------------------------+
+| Random Intercept + Slope + Quadratic seems best |
+|                                                 |
+| ### Map                                         |
++-------------------------------------------------+
+
+```{r}
+lme_map_intercept <- lme(map ~ years, data = dlong, random = ~ 1 | ID, na.action = na.exclude)
+summary(lme_map_intercept)
+
+
+```
+
+```{r}
+lme_map_slope <- lme(map ~ years, data = dlong, random = ~ years | ID, na.action = na.exclude)
+summary(lme_map_slope)
+
+
+```
+
+```{r}
+map_model_comparison <- data.frame(
+  Model = c("Random Intercept", "Random Intercept + Slope"),
+  AIC = c(AIC(lme_map_intercept), AIC(lme_map_slope)),
+  BIC = c(BIC(lme_map_intercept), BIC(lme_map_slope))
+)
+map_model_comparison
+
+anova(lme_map_intercept, lme_map_slope)
+
+```
+
+Random Intercept + Slope seems best
+
+### Next, cox. We'll choose the best parameters using step wise AIC
+
+```{r}
+# Create event indicator in 'd' (for survival model)
+d$event <- ifelse(d$stat_gra == "Graft loss", 1, 0)
+
+# potential predictors (exclude 'ID' from predictors)
+cox_vars <- c("age_at_tx", "sex_pat", "bmi", "type_dia", "duur_dia", "sexdon", "agedon", "retrans")
+
+cox_data <- d[, c("ID", "time_to_graft_failure", "event", cox_vars)]
+
+cox_full <- coxph(Surv(time_to_graft_failure, event) ~ . - ID, data = cox_data, x = TRUE)
+summary(cox_full)
+
+```
+
+# Performing backward stepwise selection
+
+```{r}
+cox_selected <- stepAIC(cox_full, direction = "backward")
+summary(cox_selected)
+```
+
+## Cox with the selected parameters
+
+```{r}
+cox_selected <- update(cox_selected, . ~ . + cluster(ID), x = TRUE, data = cox_data)
+summary(cox_selected)
+
+```
+
+### Joint Model for GFR
+
+```{r}
+joint_model_gfr <- jointModel(lme_gfr_slope, cox_selected, timeVar = "years")
+summary(joint_model_gfr)
+
+```
+
+### Joint Model for Creatine
+
+```{r}
+joint_model_creat <- jointModel(lme_creat_slope, cox_selected, timeVar = "years")
+summary(joint_model_creat)
+
+```
+
+### Joint Model for MAP
+
+```{r}
+joint_model_map <- jointModel(lme_map_slope, cox_selected, timeVar = "years")
+summary(joint_model_map)
+```
+
+## Model Comparison
+
+```{r}
+joint_model_comparison <- data.frame(
+  Model = c("Joint Model GFR", "Joint Model Creatinine", "Joint Model MAP"),
+  AIC = c(AIC(joint_model_gfr), AIC(joint_model_creat), AIC(joint_model_map))
+)
+joint_model_comparison
+
+```
+
+## Creatine seems the absolute best
+
+```{r}
+plot(joint_model_gfr, which = 2, type = "p")
+plot(joint_model_creat, which = 2, type = "p")
+plot(joint_model_map, which = 2, type = "p")
+```
+
+## Splitting the data into training and test sets
+
+```{r}
+set.seed(42)
+train_ids <- sample(unique(d$ID), size = 0.8 * length(unique(d$ID)))
+test_ids <- setdiff(unique(d$ID), train_ids)
+
+d_train <- d %>% filter(ID %in% train_ids)
+dlong_train <- dlong %>% filter(ID %in% train_ids)
+
+d_test <- d %>% filter(ID %in% test_ids)
+dlong_test <- dlong %>% filter(ID %in% test_ids)
+
+```
+
+# lme with training data
+
+```{r}
+lme_gfr_slope_train <- lme(gfr ~ years, data = dlong_train, random = ~ years | ID, na.action = na.exclude)
+
+lme_creat_slope_train <- lme(creat ~ years, data = dlong_train, random = ~ years | ID, na.action = na.exclude)
+
+lme_map_slope_train <- lme(map ~ years, data = dlong_train, random = ~ years | ID, na.action = na.exclude)
+
+```
+
+```{r}
+# 'event' defined in training data
+d_train$event <- ifelse(d_train$stat_gra == "Graft loss", 1, 0)
+
+# Re-fit Cox model with the before selected predictors
+cox_selected_train <- coxph(formula(cox_selected), data = d_train, x = TRUE)
+summary(cox_selected_train)
+
+```
+
+## Joint Train models
+
+```{r}
+joint_model_gfr_train <- jointModel(lme_gfr_slope_train, cox_selected_train, timeVar = "years")
+
+joint_model_creat_train <- jointModel(lme_creat_slope_train, cox_selected_train, timeVar = "years")
+
+joint_model_map_train <- jointModel(lme_map_slope_train, cox_selected_train, timeVar = "years")
+
+```
+
+## Dynamic predictions and plots
+
+3 test patients.
+
+```{r}
+# Choose 3 test patient IDs
+set.seed(42)
+test_patient_ids <- sample(test_ids, 3)
+test_patient_ids
+
+generate_patient_plots <- function(patient_id) {
+  test_patient_data <- dlong_test %>% filter(ID == patient_id)
+
+  test_patient_data$creat <- log(test_patient_data$creat)
+
+  patient_data_gfr <- test_patient_data %>% filter(!is.na(gfr))
+  patient_data_creat <- test_patient_data %>% filter(!is.na(creat))
+  patient_data_map <- test_patient_data %>% filter(!is.na(map))
+
+  dyn_pred_gfr <- survfitJM(joint_model_gfr_train, newdata = patient_data_gfr, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_gfr$years))
+  
+  plot(dyn_pred_gfr, conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+  
+  dyn_pred_creat <- survfitJM(joint_model_creat_train, newdata = patient_data_creat, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_creat$years))
+  
+  plot(dyn_pred_creat, conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+  
+  dyn_pred_map <- survfitJM(joint_model_map_train, newdata = patient_data_map, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_map$years))
+  
+  plot(dyn_pred_map, conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+}
+
+
+for (patient_id in test_patient_ids) {
+  generate_patient_plots(patient_id)
+}
+
+```
