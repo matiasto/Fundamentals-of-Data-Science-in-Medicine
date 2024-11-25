@@ -1,0 +1,262 @@
+---
+title: "MAM03 Week 3 Aorta Diameter Growth in Marfan Syndrome"
+output: html_document
+date: '2024-11-13'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Authors: Robin Manz & Matias Tolppanen
+
+```{r}
+# Load necessary packages
+library(ggplot2)
+library(lme4)
+library(merTools)
+library(dplyr)
+```
+
+```{r}
+marfan <- read.csv("marfan.csv")
+```
+
+# 1. Data Description
+# --------------------
+```{r}
+marfan$sexe <- factor(marfan$sexe, levels = c(0, 1), labels = c("Female", "Male"))
+head(marfan)
+cat("The dataset contains", nrow(marfan), "observations of", ncol(marfan), "variables.\n")
+str(marfan)
+```
+# Some summary statistics for numeric variables
+```{r}
+numeric_vars <- dplyr::select(marfan, age, diameter)
+summary(numeric_vars)
+
+descriptive_stats <- marfan %>%
+  summarise(
+    `Number of Patients` = n_distinct(patnr),
+    `Total Measurements` = n(),
+    `Age (Mean)` = mean(age),
+    `Age (SD)` = sd(age),
+    `Age (Min)` = min(age),
+    `Age (Max)` = max(age),
+    `Diameter (Mean)` = mean(diameter),
+    `Diameter (SD)` = sd(diameter),
+    `Diameter (Min)` = min(diameter),
+    `Diameter (Max)` = max(diameter)
+  )
+
+descriptive_stats
+```
+```{r}
+# Descriptive statistics by gender
+descriptive_by_gender <- marfan %>%
+  group_by(sexe) %>%
+  summarise(
+    `Number of Patients` = n_distinct(patnr),
+    `Total Measurements` = n(),
+    `Age (Mean)` = mean(age),
+    `Age (SD)` = sd(age),
+    `Age (Min)` = min(age),
+    `Age (Max)` = max(age),
+    `Diameter (Mean)` = mean(diameter),
+    `Diameter (SD)` = sd(diameter),
+    `Diameter (Min)` = min(diameter),
+    `Diameter (Max)` = max(diameter)
+  )
+
+descriptive_by_gender
+```
+```{r}
+# Number of measurements per patient
+measurements_per_patient <- marfan %>%
+  group_by(patnr) %>%
+  summarise(`Number of Measurements` = n())
+
+# Summary of measurements per patient
+measurements_summary <- measurements_per_patient %>%
+  summarise(
+    `Patients` = n(),
+    `Measurements (Mean)` = mean(`Number of Measurements`),
+    `Measurements (SD)` = sd(`Number of Measurements`),
+    `Measurements (Min)` = min(`Number of Measurements`),
+    `Measurements (Max)` = max(`Number of Measurements`)
+  )
+
+measurements_summary
+
+ggplot(measurements_per_patient, aes(x = `Number of Measurements`)) +
+  geom_histogram(binwidth = 1, fill = "lightblue", color = "black") +
+  labs(title = "Histogram of Number of Measurements per Patient",
+       x = "Number of Measurements", y = "Count") +
+  theme_minimal()
+
+gender_distribution <- marfan %>%
+  group_by(patnr) %>%
+  summarise(sexe = first(sexe)) %>%
+  count(sexe)
+
+gender_distribution
+
+ggplot(gender_distribution, aes(x = sexe, y = n, fill = sexe)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Number of Patients by Gender",
+       x = "Gender", y = "Number of Patients") +
+  theme_minimal() +
+  guides(fill = FALSE)
+
+# Histograms of age and diameter by gender
+ggplot(marfan, aes(x = age, fill = sexe)) +
+  geom_histogram(binwidth = 2, position = "dodge", color = "black") +
+  labs(title = "Histogram of Age by Gender", x = "Age (years)", y = "Count") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Female" = "pink", "Male" = "lightblue"))
+
+ggplot(marfan, aes(x = diameter, fill = sexe)) +
+  geom_histogram(binwidth = 5, position = "dodge", color = "black") +
+  labs(title = "Histogram of Aorta Diameter by Gender", x = "Diameter (mm)", y = "Count") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Female" = "pink", "Male" = "lightblue"))
+
+# Scatter plot of diameter vs age colored by gender
+ggplot(marfan, aes(x = age, y = diameter, color = sexe)) +
+  geom_point(alpha = 0.6) +
+  labs(title = "Aorta Diameter vs Age by Gender",
+       x = "Age (years)", y = "Aorta Diameter (mm)", color = "Gender") +
+  theme_minimal()
+
+# Correlation between age and diameter
+correlation <- cor(marfan$age, marfan$diameter)
+cat("Correlation between age and diameter:", round(correlation, 3), "\n")
+```
+
+# 2. Fit Mixed-Effects Regression Model and Check the Assumptions
+# ---------------------------------------------------------------
+
+```{r}
+# Fit a linear mixed-effects model with random intercepts
+# model1 <- lmer(diameter ~ age + sexe + (1 | patnr), data = marfan, REML = FALSE)
+summary(model1)
+```
+# Assumptions Checking
+# ---------------------
+```{r}
+residuals <- residuals(model1)
+fitted <- fitted(model1)
+
+# Just plotting the residuals vs fitted values
+ggplot(data.frame(fitted = fitted, residuals = residuals), aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "red") +
+  labs(title = "Residuals vs Fitted Values",
+       x = "Fitted Values", y = "Residuals") +
+  theme_minimal()
+
+# Q-Q plot of residuals
+qqnorm(residuals)
+qqline(residuals, col = "red")
+
+# Histogram of residuals
+ggplot(data.frame(residuals = residuals), aes(x = residuals)) +
+  geom_histogram(binwidth = 2, fill = "lightblue", color = "black") +
+  labs(title = "Histogram of Residuals", x = "Residuals", y = "Frequency") +
+  theme_minimal()
+
+```
+# 3. Expected Aorta Diameter for New Patients Aged 20-50
+# ------------------------------------------------------
+```{r}
+# new data frame with ages from 20 to 50
+newdata <- expand.grid(age = seq(20, 50, by = 1),
+                       sexe = factor(c("Female", "Male"), levels = levels(marfan$sexe)))
+
+# Include a dummy 'patnr' for new patients, had some error without this one.
+# This is a lazy fix, have to look at this later.
+newdata$patnr <- 9999
+
+# Predict diameter for new patients using fixed effects only
+newdata$pred_diameter <- predict(model1, newdata, re.form = NA)
+
+# CI:s manually, had an error using predictInterval() -> not finding some parameters
+# Didn't want to waste time so just opted for manual approach
+
+# the model matrix for new data
+X_new <- model.matrix(~ age + sexe, data = newdata)
+fixed_effects <- fixef(model1)
+vcov_matrix <- vcov(model1)
+
+# SE
+newdata$se_fit <- sqrt(diag(X_new %*% vcov_matrix %*% t(X_new)))
+
+# CI
+newdata$pred_lower <- newdata$pred_diameter - 1.96 * newdata$se_fit
+newdata$pred_upper <- newdata$pred_diameter + 1.96 * newdata$se_fit
+
+ggplot(newdata, aes(x = age, y = pred_diameter, color = sexe, fill = sexe)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = pred_lower, ymax = pred_upper), alpha = 0.2, color = NA) +
+  labs(title = "Expected Aorta Diameter for New Patients",
+       x = "Age (years)", y = "Aorta Diameter (mm)",
+       color = "Gender", fill = "Gender") +
+  theme_minimal()
+```
+
+# 4. Expected Aorta Diameter for Current Patients One Year Later
+# --------------------------------------------------------------
+```{r}
+# For each patient, get the last measurement
+last_measurements <- marfan %>%
+  group_by(patnr) %>%
+  filter(age == max(age)) %>%
+  ungroup()
+
+# Creating new data with age one year later
+last_measurements$age_plus_one <- last_measurements$age + 1
+
+# Preparing data for prediction
+predict_data <- last_measurements %>%
+  dplyr::select(patnr, sexe, age_plus_one) %>%
+  dplyr::rename(age = age_plus_one)
+
+# Predict including random effects (conditional predictions)
+predictions_current <- predictInterval(model1, predict_data, level = 0.95,
+                                       n.sims = 1000, stat = "mean",
+                                       which = "full",
+                                       include.resid.var = TRUE)
+
+
+predict_data$pred_diameter <- predictions_current$fit
+predict_data$pred_lower <- predictions_current$lwr
+predict_data$pred_upper <- predictions_current$upr
+
+plot_data <- last_measurements %>%
+  dplyr::select(patnr, age, sexe, diameter) %>%
+  dplyr::rename(original_age = age, original_diameter = diameter) %>%
+  dplyr::left_join(predict_data %>% dplyr::select(patnr, sexe, age, pred_diameter, pred_lower, pred_upper), by = "patnr")
+
+# The data had two sexe columns (.x and .y) Just wanted this to work so -> clean up plot_data to retain only one `sexe` column. Should look into this one as well.
+plot_data <- plot_data %>%
+  dplyr::mutate(sexe = coalesce(sexe.x, sexe.y)) %>%
+  dplyr::select(-sexe.x, -sexe.y)
+
+
+# Here we plot the original data and the prediction of "one year later" and connecting them with line. I think it's cool but a bit messy. Oh well ¯\_(ツ)_/¯
+ggplot(plot_data) +
+  # Lines connecting original and predicted points
+  geom_segment(aes(x = original_age, y = original_diameter, 
+                   xend = age, yend = pred_diameter, color = sexe, group = patnr),
+               size = 0.5) +
+  # Original data points
+  geom_point(aes(x = original_age, y = original_diameter, color = sexe), shape = 16, size = 2) +
+  # Predicted data points one year later
+  geom_point(aes(x = age, y = pred_diameter, color = sexe), shape = 17, size = 2) +
+  # Error bars for predicted data points
+  geom_errorbar(aes(x = age, ymin = pred_lower, ymax = pred_upper, color = sexe), width = 0.2) +
+  labs(title = "Original and Predicted Aorta Diameter One Year Later for Each Patient",
+       x = "Age (years)", y = "Aorta Diameter (mm)", color = "Gender") +
+  theme_minimal()
+
+```

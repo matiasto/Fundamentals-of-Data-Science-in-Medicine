@@ -21,7 +21,7 @@ library(gridExtra)
 ```
 
 ```{r}
-load('kidney transplant.RData')
+load('kidney_transplant.RData')
 ls()
 ```
 
@@ -274,6 +274,38 @@ summary(lme_gfr_intercept)
 lme_gfr_slope <- lme(gfr ~ years, data = dlong, random = ~ years | ID, na.action = na.exclude)
 summary(lme_gfr_slope)
 
+# Extract fixed effects
+fixed_effects <- summary(lme_gfr_slope)$tTable
+
+# Create a data frame for the table
+fixed_table <- data.frame(
+    Variable = rownames(fixed_effects),
+    # Estimate = fixed_effects[, "Value"],
+    `Std. Error` = fixed_effects[, "Std.Error"],
+    `t-value` = fixed_effects[, "t-value"],
+    `p-value` = fixed_effects[, "p-value"]
+)
+
+# View the table
+print(fixed_table)
+
+# Extract random effects
+random_effects <- VarCorr(lme_gfr_slope)
+
+# Create a data frame for the table
+random_table <- data.frame(
+    `Random Effect` = c("Intercept", "Years", "Residual"),
+    `Variance` = c(as.numeric(random_effects[1, 1]), 
+                   as.numeric(random_effects[2, 2]), 
+                    summary(lme_gfr_slope)$sigma^2),
+    `Standard Deviation` = c(sqrt(as.numeric(random_effects[1, 1])), 
+                             sqrt(as.numeric(random_effects[2, 2])), 
+                             summary(lme_gfr_slope)$sigma)
+)
+
+# View the table
+print(random_table)
+
 ```
 
 Comparing using aic and bic
@@ -304,6 +336,38 @@ summary(lme_creat_intercept)
 ```{r}
 lme_creat_slope <- lme(creat ~ years, data = dlong, random = ~ years | ID, na.action = na.exclude)
 summary(lme_creat_slope)
+
+# Extract fixed effects
+fixed_effects <- summary(lme_creat_slope)$tTable
+
+# Create a data frame for the table
+fixed_table <- data.frame(
+    Variable = rownames(fixed_effects),
+    Estimate = fixed_effects[, "Value"],
+    `Std. Error` = fixed_effects[, "Std.Error"],
+    `t-value` = fixed_effects[, "t-value"],
+    `p-value` = fixed_effects[, "p-value"]
+)
+
+# View the table
+print(fixed_table)
+
+# Extract random effects
+random_effects <- VarCorr(lme_creat_slope)
+
+# Create a data frame for the table
+random_table <- data.frame(
+    `Random Effect` = c("Intercept", "Years", "Residual"),
+    `Variance` = c(as.numeric(random_effects[1, 1]), 
+                   as.numeric(random_effects[2, 2]), 
+                    summary(lme_creat_slope)$sigma^2),
+    `Standard Deviation` = c(sqrt(as.numeric(random_effects[1, 1])), 
+                             sqrt(as.numeric(random_effects[2, 2])), 
+                             summary(lme_creat_slope)$sigma)
+)
+
+# View the table
+print(random_table)
 
 ```
 
@@ -336,6 +400,37 @@ summary(lme_map_intercept)
 lme_map_slope <- lme(map ~ years, data = dlong, random = ~ years | ID, na.action = na.exclude)
 summary(lme_map_slope)
 
+# Extract fixed effects
+fixed_effects <- summary(lme_map_slope)$tTable
+
+# Create a data frame for the table
+fixed_table <- data.frame(
+    Variable = rownames(fixed_effects),
+    Estimate = fixed_effects[, "Value"],
+    `Std. Error` = fixed_effects[, "Std.Error"],
+    `t-value` = fixed_effects[, "t-value"],
+    `p-value` = fixed_effects[, "p-value"]
+)
+
+# View the table
+print(fixed_table)
+
+# Extract random effects
+random_effects <- VarCorr(lme_map_slope)
+
+# Create a data frame for the table
+random_table <- data.frame(
+    `Random Effect` = c("Intercept", "Years", "Residual"),
+    `Variance` = c(as.numeric(random_effects[1, 1]), 
+                   as.numeric(random_effects[2, 2]), 
+                   # summary(lme_map_slope)$sigma^2),
+    `Standard Deviation` = c(sqrt(as.numeric(random_effects[1, 1])), 
+                             sqrt(as.numeric(random_effects[2, 2])), 
+                             summary(lme_map_slope)$sigma)
+)
+
+# View the table
+print(random_table)
 
 ```
 
@@ -354,7 +449,7 @@ anova(lme_map_intercept, lme_map_slope)
 Random Intercept + Slope seems best
 
 ### Next, cox. We'll choose the best parameters using step wise AIC
-
+## Graft rejection
 ```{r}
 # Create event indicator in 'd' (for survival model)
 d$event <- ifelse(d$stat_gra == "Graft loss", 1, 0)
@@ -369,11 +464,30 @@ summary(cox_full)
 
 ```
 
+Analog for death
+```{r}
+# Create event indicator in 'd' (for survival model)
+d$event_death <- ifelse(d$stat_pat == "overleden", 1, 0)
+
+# potential predictors (exclude 'ID' from predictors)
+cox_death_vars <- c("age_at_tx", "sex_pat", "bmi", "type_dia", "duur_dia", "sexdon", "agedon", "retrans")
+
+cox_death_data <- d[, c("ID", "time_to_death", "event_death", cox_vars)]
+
+cox_death_full <- coxph(Surv(time_to_death, event_death) ~ . - ID, data = cox_death_data, x = TRUE)
+summary(cox_death_full)
+
+
+```
+
 # Performing backward stepwise selection
 
 ```{r}
 cox_selected <- stepAIC(cox_full, direction = "backward")
 summary(cox_selected)
+
+cox_death_selected <- stepAIC(cox_death_full, direction = "backward")
+summary(cox_death_selected)
 ```
 
 ## Cox with the selected parameters
@@ -382,7 +496,15 @@ summary(cox_selected)
 cox_selected <- update(cox_selected, . ~ . + cluster(ID), x = TRUE, data = cox_data)
 summary(cox_selected)
 
+# death as well
+cox_death_selected <- update(cox_death_selected, . ~ . + cluster(ID), x = TRUE, data = cox_death_data)
+summary(cox_death_selected)
+
 ```
+Significant for graft rejection: age_at_tx,sex_patmale, type_diageen, agedon
+
+Significant for death: age_at_tx, duur_dia
+mildly: agedon (0.097), retrans (0.069297)
 
 ### Joint Model for GFR
 
@@ -390,6 +512,8 @@ summary(cox_selected)
 joint_model_gfr <- jointModel(lme_gfr_slope, cox_selected, timeVar = "years")
 summary(joint_model_gfr)
 
+death_joint_model_gfr <- jointModel(lme_gfr_slope, cox_death_selected, timeVar = "years")
+summary(death_joint_model_gfr)
 ```
 
 ### Joint Model for Creatine
@@ -398,6 +522,9 @@ summary(joint_model_gfr)
 joint_model_creat <- jointModel(lme_creat_slope, cox_selected, timeVar = "years")
 summary(joint_model_creat)
 
+death_joint_model_creat <- jointModel(lme_creat_slope, cox_death_selected, timeVar = "years")
+summary(death_joint_model_creat)
+
 ```
 
 ### Joint Model for MAP
@@ -405,6 +532,9 @@ summary(joint_model_creat)
 ```{r}
 joint_model_map <- jointModel(lme_map_slope, cox_selected, timeVar = "years")
 summary(joint_model_map)
+
+death_joint_model_map <- jointModel(lme_map_slope, cox_death_selected, timeVar = "years")
+summary(death_joint_model_map)
 ```
 
 ## Model Comparison
@@ -416,6 +546,12 @@ joint_model_comparison <- data.frame(
 )
 joint_model_comparison
 
+death_joint_model_comparison <- data.frame(
+  Model = c("Death Joint Model GFR", "Death Joint Model Creatinine", "Death Joint Model MAP"),
+  AIC = c(AIC(death_joint_model_gfr), AIC(death_joint_model_creat), AIC(death_joint_model_map))
+)
+death_joint_model_comparison
+
 ```
 
 ## Creatine seems the absolute best
@@ -424,6 +560,10 @@ joint_model_comparison
 plot(joint_model_gfr, which = 2, type = "p")
 plot(joint_model_creat, which = 2, type = "p")
 plot(joint_model_map, which = 2, type = "p")
+
+plot(death_joint_model_gfr, which = 2, type = "p")
+plot(death_joint_model_creat, which = 2, type = "p")
+plot(death_joint_model_map, which = 2, type = "p")
 ```
 
 ## Splitting the data into training and test sets
@@ -460,6 +600,13 @@ d_train$event <- ifelse(d_train$stat_gra == "Graft loss", 1, 0)
 cox_selected_train <- coxph(formula(cox_selected), data = d_train, x = TRUE)
 summary(cox_selected_train)
 
+# 'event' defined in training data
+d_train$event_death <- ifelse(d_train$stat_pat == "overleden", 1, 0)
+
+# Re-fit Cox model with the before selected predictors
+cox_death_selected_train <- coxph(formula(cox_death_selected), data = d_train, x = TRUE)
+summary(cox_death_selected_train)
+
 ```
 
 ## Joint Train models
@@ -470,6 +617,13 @@ joint_model_gfr_train <- jointModel(lme_gfr_slope_train, cox_selected_train, tim
 joint_model_creat_train <- jointModel(lme_creat_slope_train, cox_selected_train, timeVar = "years")
 
 joint_model_map_train <- jointModel(lme_map_slope_train, cox_selected_train, timeVar = "years")
+
+
+death_joint_model_gfr_train <- jointModel(lme_gfr_slope_train, cox_death_selected_train, timeVar = "years")
+
+death_joint_model_creat_train <- jointModel(lme_creat_slope_train, cox_death_selected_train, timeVar = "years")
+
+death_joint_model_map_train <- jointModel(lme_map_slope_train, cox_death_selected_train, timeVar = "years")
 
 ```
 
@@ -494,20 +648,46 @@ generate_patient_plots <- function(patient_id) {
 
   dyn_pred_gfr <- survfitJM(joint_model_gfr_train, newdata = patient_data_gfr, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_gfr$years))
   
-  plot(dyn_pred_gfr, conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+  plot(dyn_pred_gfr, main=paste("Graft rejection probability for", patient_id, "using gfr"), conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
   
   dyn_pred_creat <- survfitJM(joint_model_creat_train, newdata = patient_data_creat, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_creat$years))
   
-  plot(dyn_pred_creat, conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+  plot(dyn_pred_creat, main=paste("Graft rejection probability for", patient_id, "using creat"), conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
   
   dyn_pred_map <- survfitJM(joint_model_map_train, newdata = patient_data_map, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_map$years))
   
-  plot(dyn_pred_map, conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+  plot(dyn_pred_map, main=paste("Graft rejection probability for", patient_id, "using map"), conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+}
+
+
+death_generate_patient_plots <- function(patient_id) {
+  test_patient_data <- dlong_test %>% filter(ID == patient_id)
+
+  test_patient_data$creat <- log(test_patient_data$creat)
+
+  patient_data_gfr <- test_patient_data %>% filter(!is.na(gfr))
+  patient_data_creat <- test_patient_data %>% filter(!is.na(creat))
+  patient_data_map <- test_patient_data %>% filter(!is.na(map))
+
+  dyn_pred_gfr <- survfitJM(death_joint_model_gfr_train, newdata = patient_data_gfr, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_gfr$years))
+  
+  plot(dyn_pred_gfr, main=paste("Death probability for", patient_id, "using gfr"), conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+  
+  dyn_pred_creat <- survfitJM(death_joint_model_creat_train, newdata = patient_data_creat, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_creat$years))
+  
+  plot(dyn_pred_creat, main=paste("Death probability for", patient_id, "using creat"), conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
+  
+  dyn_pred_map <- survfitJM(death_joint_model_map_train, newdata = patient_data_map, type = "Subject", idVar = "ID", interval = "confidence", last.time = max(patient_data_map$years))
+  
+  plot(dyn_pred_map, main=paste("Death probability for", patient_id, "using map"),  conf.int=TRUE, fill.area=TRUE, col.area="grey", include.y=TRUE)
 }
 
 
 for (patient_id in test_patient_ids) {
+  print(paste("Graft rejection for", patient_id))
   generate_patient_plots(patient_id)
+  print(paste("Death for", patient_id))
+  death_generate_patient_plots(patient_id)
 }
 
 ```
